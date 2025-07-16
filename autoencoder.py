@@ -12,6 +12,8 @@ import wandb
 class Autoencoder(nn.Module):
     """
     Autoencoder
+
+    NOTE: with cues from https://www.geeksforgeeks.org/deep-learning/implementing-an-autoencoder-in-pytorch/
     """
 
     def __init__(self, dims=1000):
@@ -38,8 +40,10 @@ class Autoencoder(nn.Module):
         """
         Implement our forward pass 
         """
+        h = self.encoder(x) 
+        r = self.decoder(h)
 
-        return x
+        return r
 
 class DeepCartDataset(torch.utils.data.Dataset): 
     """
