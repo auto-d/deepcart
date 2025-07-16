@@ -14,13 +14,25 @@ class Autoencoder(nn.Module):
     Autoencoder
     """
 
-    def __init__(self, w=32):
+    def __init__(self, dims=1000):
         """
         Initialize a new object 
         """
         super().__init__()
         
-        #TODO: implement
+        #TODO: refine this to match our target product embeddings concatenated with user features?
+        self.encoder = nn.Sequential(
+            nn.Linear(dims, 750),
+            nn.Linear(750, 500),
+            nn.Linear(500, 250),
+            nn.Linear(250, 125),
+        )
+        self.decoder = nn.Sequential(
+            nn.Linear(125, 250),
+            nn.Linear(250, 500),
+            nn.Linear(500, 750),
+            nn.Linear(750, dims),
+        )
 
     def forward(self, x):
         """
