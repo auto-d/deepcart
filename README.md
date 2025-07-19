@@ -4,6 +4,16 @@ DeepCart is a tool to sift through Amazon electronics purchase historicals and s
 
 ## TODO 
 
+- EDA 
+- decide on neural network approach 
+- model and evaluate NN 
+- decide on non-neural approach 
+- model and evalute non-NN 
+- pick a naive approach (random) 
+- evaluate naive approach 
+- build a web app 
+- write the readme 
+- record a video
 
 ## Problem 
 
@@ -17,6 +27,13 @@ DeepCart is a tool to sift through Amazon electronics purchase historicals and s
 
 
 ### Data Processing Pipeline 
+
+The Amazon dataset is 
+
+1. Download review and product datasets
+2. Leverage command-line JSON parser for effiency to filter non-essential columns from both (maxi -> mini)
+3. Ingest JSON, run needed type conversions and write as Parquet to gain efficiency on future read/write ops and reduce memory pressure
+4. 
 
 ### Models
 
