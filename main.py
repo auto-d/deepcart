@@ -108,7 +108,6 @@ def router():
     build_parser.add_argument("--items-file", type=readable_file, help="File to containing item metadata", default="data/2023/items_1.6M.parquet", required=False)
     build_parser.add_argument("--reviews-file", type=readable_file, help="File to contining review data", default="data/2023/reviews_10M.parquet", required=False)
     build_parser.add_argument("--min-ratings", type=int, help="Minimum threshold for number of ratings by a user", default=10, required=False)
-    build_parser.add_argument("--min-interactions", type=int, help="Minimum number of interactions an item must have to be included", default=10, required=False)
     build_parser.add_argument("--sample-n", type=float, help="Number of users to sample from the total", default=10000, required=False)
     build_parser.add_argument("--output-dir", type=readable_dir, help="Directory to write resulting dataset to", default="data/processed", required=False)
     build_parser.add_argument("--data-tag", type=str, help="Friendly name to tag dataset names with", required=True)
