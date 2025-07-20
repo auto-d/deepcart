@@ -42,14 +42,32 @@ The Amazon dataset is
   
 ## Quickstart 
 
-All testing done with Python 3.12
+All testing done with Python 3.9 
 
 1. `pip install -r requirements.txt` 
+2. 
 
 ## Usage 
 
+```usage: deepcart build [-h] [--items-file ITEMS_FILE] [--reviews-file REVIEWS_FILE] [--min-interactions MIN_INTERACTIONS] [--min-ratings MIN_RATINGS] [--sample-n SAMPLE_N] [--output-dir OUTPUT_DIR] --tag TAG```
+
+**Generate a Dataset** 
+
+To generate a dataset, run the `build` command and specify the number of interactions, ratings, and user subsample. For example: 
 
 ```
+deepcart$ python main.py build --min-interactions 10 --min-ratings 100 --sample-n 10000 --tag small
+
+Generating dataset based on data/2023/items_1.6M.parquet and data/2023/reviews_10M.parquet...
+Found 2,294,450 users with 10,000,000 ratings of 1,610,012 items.
+Dropped 1,350,025 items (<100 ratings)
+Dropped 2,069,321 users (reviews <10)
+Dropped 4,261,903 reviews (no user associated)
+Dropped 198,411 items (no review associated)
+Writing 196,325 reviews as data/processed/reviews_small.parquet...
+Writing 259,987 items as data/processed/items_small.parquet...
+Wrote 'small' dataset to data/processed.
+Generation complete!
 ```
 
   

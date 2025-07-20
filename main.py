@@ -1,6 +1,7 @@
 import argparse 
 import os
 import naive
+import autoencoder
 import cfnn 
 import naive
 import tempfile
@@ -15,6 +16,8 @@ def deploy_demo(token):
     container prior
     """
     
+    #TODO: update or discard 
+
     # Inconsistent results pushing via huggingface-cli and https, rely on 
     # SSH (pubkey loaded on distant end) 
     spaces_https_url = "https://huggingface.co/spaces/3emaphor/forklift"
@@ -49,41 +52,50 @@ def deploy(token, model, refresh=False):
 def load_secrets(): 
     """
     Find our secrets and return them
+    NOTE: reused from NLP project
     """
             
-    hf_token = os.environ.get("HF_TOKEN")
-    if not hf_token: 
-        with open("secrets/huggingface.token", "r") as file: 
-            hf_token = file.read()
+    # TODO: update or discard 
+    # hf_token = os.environ.get("HF_TOKEN")
+    # if not hf_token: 
+    #     with open("secrets/huggingface.token", "r") as file: 
+    #         hf_token = file.read()
     
-    openai_key = os.environ.get("OPENAI_API_KEY")
-    if not openai_key: 
-        with open("secrets/openai.key", "r") as file: 
-            openai_key = file.read() 
-    
-    return hf_token, openai_key 
+    return None
 
 def readable_file(path):
-    """Test for a readable file"""
+    """
+    Test for a readable file
+    NOTE: reused from NLP project
+    """
     if not os.path.exists(path):
         raise argparse.ArgumentTypeError(f"'{path}' doesn't exist.")
     return path
 
 def nonexistent_file(path):
-    """Test for a non-existent file (to help avoid overwriting important stuff)"""
+    """
+    Test for a non-existent file (to help avoid overwriting important stuff)
+    NOTE: reused from NLP project
+    """
     if os.path.exists(path):
         raise argparse.ArgumentTypeError(f"'{path}' already exists.")
     return path
 
 def readable_dir(path):
-    """Test for a readable dir"""
+    """
+    Test for a readable dir
+    NOTE: reused from NLP project
+    """
     if os.path.isdir(path):
         return path
     else:
         raise argparse.ArgumentTypeError(f"'{path}' is not a valid directory.")
     
 def nonexistent_dir(path): 
-    """Test to ensure directory doesn't exist"""    
+    """
+    Test to ensure directory doesn't exist
+    NOTE: reused from NLP project
+    """    
     if os.path.exists(path):
         if os.path.isdir(path):
             raise argparse.ArgumentTypeError(f"Directory '{path}' already exists.")
@@ -96,7 +108,7 @@ def router():
     Argument processor and router
 
     @NOTE: Argparsing with help from chatgpt: https://chatgpt.com/share/685ee2c0-76c8-8013-abae-304aa04b0eb1
-    @NOTE: arg parsing logic incorporates word from NLP assignment
+    @NOTE: arg parsing logic incorporates work from NLP assignment
     """
 
     parser = argparse.ArgumentParser("deepcart", description="Amazpon electronics recommendations via variational autoencoder")
@@ -107,19 +119,18 @@ def router():
     build_parser = subparsers.add_parser("build") 
     build_parser.add_argument("--items-file", type=readable_file, help="File to containing item metadata", default="data/2023/items_1.6M.parquet", required=False)
     build_parser.add_argument("--reviews-file", type=readable_file, help="File to contining review data", default="data/2023/reviews_10M.parquet", required=False)
-    build_parser.add_argument("--min-ratings", type=int, help="Minimum threshold for number of ratings by a user", default=10, required=False)
-    build_parser.add_argument("--sample-n", type=float, help="Number of users to sample from the total", default=10000, required=False)
+    build_parser.add_argument("--min-interactions", type=int, help="Minimum threshold for number of ratings by a user", default=10, required=False)
+    build_parser.add_argument("--min-ratings", type=int, help="Minimum number of product reviews an item must have", default=10)
+    build_parser.add_argument("--sample-n", type=int, help="Number of users to sample from the total", default=10000, required=False)
     build_parser.add_argument("--output-dir", type=readable_dir, help="Directory to write resulting dataset to", default="data/processed", required=False)
-    build_parser.add_argument("--data-tag", type=str, help="Friendly name to tag dataset names with", required=True)
+    build_parser.add_argument("--tag", type=str, help="Friendly name to tag dataset names with", required=True)
 
     # Train mode 
     train_parser = subparsers.add_parser("train") 
     train_parser.add_argument("--data-dir", type=readable_dir, help="Directory to look for tagged dataset", default="data/processed", required=False)
     train_parser.add_argument("--data-tag", type=str, help="Dataset tag to look for (set during creation)", required=True)
     train_parser.add_argument("--model-dir", help="Directory to write resulting model to", required=False, default="models")
-    train_parser.add_argument("--nn_steps", type=int, default=1)
     train_parser.add_argument("--nn_epochs", type=int, default=3)
-    train_parser.add_argument("--nn_batch", type=int, default=8)
     train_parser.add_argument("--type", choices=['naive', 'classic', 'neural'], default='neural')
 
     # Test mode 
@@ -136,38 +147,50 @@ def router():
     
     args = parser.parse_args()
     
-    hf_token, openai_key = load_secrets()
-    match args.mode:     
-        case "build":
-            if openai_key: 
-                paths = args.inputs if type(args.inputs) == list else [args.inputs]
-                dataset.build(paths, openai_key, args.dataset)
-            else: 
-                print("No OpenAI API key found!")
+    hf_token = load_secrets()
+    if args.mode == "build":
+        dataset.build(
+            args.items_file, 
+            args.reviews_file, 
+            args.tag, 
+            args.output_dir, 
+            args.min_interactions, 
+            args.min_ratings, 
+            args.sample_n)
 
-        case "train":
-            if args.type == 'naive':
-                naive.train(args.dataset, args.model_dir)
-            if args.type == 'classic':
-                hmm.train(args.dataset, args.model_dir) 
-            if args.type == 'neural': 
-                slm.train(args.dataset, args.model_dir, args.nn_batch, args.nn_steps, args.nn_epochs)
+    elif args.mode == "train":
+        if args.type == 'naive':
+            #naive.train(args.dataset, args.model_dir)
+            pass
+        if args.type == 'classic':
+            #hmm.train(args.dataset, args.model_dir) 
+            pass
+        if args.type == 'neural': 
+            users, reviews, _ = dataset.load(args.data_dir, args.data_tag)
+            model = autoencoder.train(
+                users, 
+                reviews, 
+                args.model_dir, 
+                args.nn_epochs)
+            autoencoder.save_model(model, args.model_dir)
 
-        case "test":
-            if args.type == 'naive':
-                naive.test(args.model_dir, args.dataset)
-            if args.type == 'classic':
-                hmm.test(args.model_dir, args.dataset) 
-            if args.type == 'neural': 
-                slm.test(args.model_dir, args.dataset)
+    elif args.mode == "test":
+        if args.type == 'naive':
+            #naive.test(args.model_dir, args.dataset)
+            pass
+        if args.type == 'classic':
+            #hmm.test(args.model_dir, args.dataset) 
+            pass
+        if args.type == 'neural': 
+            autoencoder.test(args.model_dir, args.dataset)
 
-        case "deploy":            
-            if hf_token: 
-                deploy(args.model_dir, hf_token, args.refresh)
-            else: 
-                print("No huggingface token found!")
-        case _:
-            parser.print_help()
+    elif args.mode == "deploy":            
+        if hf_token: 
+            deploy(args.model_dir, hf_token, args.refresh)
+        else: 
+            print("No huggingface token found!")
+    else:
+        parser.print_help()
 
 if __name__ == "__main__": 
     router()
