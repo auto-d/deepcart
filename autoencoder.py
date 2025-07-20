@@ -1,140 +1,131 @@
-import torch 
+import numpy as np 
 import pandas as pd 
-import torch
+import keras 
 from tqdm import tqdm
 import os
-import math 
-import torch.nn as nn
-import torch.nn.functional as F
-import torch.optim as optim
-import wandb
+from recommenders.datasets.sparse import AffinityMatrix
+from recommenders.datasets.python_splitters import python_random_split, python_stratified_split 
+from recommenders.utils.python_utils import binarize
+from recommenders.models.vae.standard_vae import StandardVAE
 
-class Autoencoder(nn.Module):
-    """
-    Autoencoder
-
-    NOTE: with cues from https://www.geeksforgeeks.org/deep-learning/implementing-an-autoencoder-in-pytorch/
-    """
-
-    def __init__(self, dims=1000):
-        """
-        Initialize a new object 
-        """
-        super().__init__()
-        
-        #TODO: refine this to match our target product embeddings concatenated with user features?
-        self.encoder = nn.Sequential(
-            nn.Linear(dims, 750),
-            nn.Linear(750, 500),
-            nn.Linear(500, 250),
-            nn.Linear(250, 125),
-        )
-        self.decoder = nn.Sequential(
-            nn.Linear(125, 250),
-            nn.Linear(250, 500),
-            nn.Linear(500, 750),
-            nn.Linear(750, dims),
-        )
-
-    def forward(self, x):
-        """
-        Implement our forward pass 
-        """
-        h = self.encoder(x) 
-        r = self.decoder(h)
-
-        return r
-
-class DeepCartDataset(torch.utils.data.Dataset): 
-    """
-    Custom pytorch-compatible dataset. Adapted from 
-    https://pytorch.org/tutorials/beginner/basics/data_tutorial.html#creating-a-custom-dataset-for-your-files
-    """
-    def __init__(self, annotations_file, img_dir, transform=None, target_transform=None): 
-
-        self.img_labels = pd.read_csv(annotations_file)
-
-        #TODO: implement
-
-    def __len__(self): 
-        return len(self.img_labels) 
-    
-    def __getitem__(self, idx): 
-        #TODO: implement
-        pass
-    
-def get_data_loader(batch_size=5, shuffle=True): 
-    """
-    Retrieve a pytorch-style dataloader 
-    """
-
-    #TODO: implement
-    #transform = transforms.Compose([
-    #     transforms.ConvertImageDtype(torch.float),
-    #     transforms.Normalize(mean=[0.5], std=[0.5])
-    #])
-
-    #data = DeepCartDataset(transform=transform)
-    #loader = torch.utils.data.DataLoader(data, batch_size=batch_size, shuffle=shuffle)
-    
-    #return loader
-    pass
-
-def train(loader, model, loss_interval=20, epochs=2, lr=0.01, momentum=0.9):
+def train(users, reviews, items, epochs=2, batch=10):
     """
     Train the model with the provided dataset
 
     NOTE: this is a similar training loop as we used for our vision model in the 
     the vision project, forward pass
     """
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    
-    train_loss = []
-
     tqdm.write(f"Starting training run...")    
-    # TODO: configure WandB
-    # see https://docs.wandb.ai/guides/integrations/pytorch/
-    config = {}
-    run = wandb.init(config=config) 
+    print(f"Full user-item matrix is {len(users) * len(items)}")
 
-    model.train()
-    model = model.to(device)
+    # We are trying to teach the model what a good interaction is like, and we'll 
+    # ultimately be interested only in whether to recommend an item or not ... 
+    # low reviews are not something we want the model suggesting... 
+    reviews_low = reviews[reviews.rating < 3]
+    reviews = reviews[reviews.rating >= 3]
+
+    # NOTE: Strategy adapted from tutorials available in the Recommenders project, see 
+    # https://github.com/recommenders-team/recommenders/tree/main
+    # Split along user boundaries to ensure no leakage of preference between train and test
+    train_users, test_users, val_users = python_random_split(users, [.9, .05, .05])
+    print(train_users.shape, test_users.shape, val_users.shape)
+
+    train = reviews[reviews.user_id.isin(train_users.user_id)]
+    val = reviews[reviews.user_id.isin(val_users.user_id)]
+    test = reviews[reviews.user_id.isin(test_users.user_id)]
+    print(train.shape, val.shape, test.shape)
     
-    loss_fn = nn.CrossEntropyLoss()
+    # Technique from Recommenders (see https://github.com/recommenders-team/recommenders/blob/45e1b215a35e69b92390e16eb818d4528d0a33a2/examples/02_model_collaborative_filtering/standard_vae_deep_dive.ipynb) 
+    # to improve utility of validation set during training - only allow items in
+    # the validation set that are also present in the train set
+    val = val[val.item_id.isin(train.item_id.unique())]
+    print(val.shape)
 
-    optimizer = optim.SGD(model.parameters(), lr=lr, momentum=momentum)
+    # Another technique employed in Recommenders (see above link for notebook), for in-flight validation to be 
+    # meaningful during training, our validation set needs not just ground truth, but unseen validation samples 
+    # to see if predictions for validation users are relevant (to those users). Anyway, break down our val and test 
+    # sets again to support this strategy
+    val_src, val_target = python_stratified_split(
+        data=val, 
+        ratio=0.8, 
+        filter_by="item", 
+        col_user="user_id", 
+        col_item="item_id"
+        )
+    test_src, test_target = python_stratified_split(
+        data=test, 
+        ratio=0.8, 
+        filter_by="item", 
+        col_user="user_id", 
+        col_item="item_id"
+        )
+    
+    print(val.shape, " -> ", val_src.shape, val_target.shape)
+    print(test.shape, " -> ", test_src.shape, test_target.shape)
 
-    for epoch in range(epochs):
+    #to use standard names across the analysis 
+    header = {
+            "col_user": "user_id",
+            "col_item": "item_id",
+            "col_rating": "rating",
+            # Unclear why this doesn't also eat a timestamp, but many of the functions that split temporally use, fortunately 
+            # the column 'timestamp' (i.e. DEFAULT_TIMESTAMP_COL='timestamp') so I think we're fine. 
+            # "col_timestamp" : "timestamp"
+        }
 
-        running_loss = 0.0
-        for i, data in enumerate(loader):
+    train_matrix = AffinityMatrix(df=train, **header)
+    val_matrix = AffinityMatrix(df=val, **header)
+    val_src_matrix = AffinityMatrix(df=val_src, **header)
+    val_tgt_matrix = AffinityMatrix(df=val_target, **header)
+    test_src_matrix = AffinityMatrix(df=test_src, **header)
+    test_tgt_matrix = AffinityMatrix(df=test_target, **header)
 
-            # get the inputs; data is a list of [inputs, labels]
-            inputs, labels = data
-            inputs = inputs.to(device)
-            labels = labels.to(device)
-            
-            # zero the parameter gradients
-            optimizer.zero_grad()
+    # This generates a sparse array of user vectors, aka user-item matrix
+    # X[0] is the first user in the list, with entries for all items known when the matrix was constructed in that row
+    train, _, _ = train_matrix.gen_affinity_matrix()
+    val, _, _ = val_matrix.gen_affinity_matrix() 
+    val_src, _, _ = val_src_matrix.gen_affinity_matrix()
+    val_tgt, _, _ = val_tgt_matrix.gen_affinity_matrix()
+    test_src, _, _ = test_src_matrix.gen_affinity_matrix()
+    test_tgt, _, _ = test_src_matrix.gen_affinity_matrix()    
 
-            # forward + backward + optimize
-            outputs = model(inputs)
+    train = binarize(train, 3)
+    val = binarize(train, 3)
+    val_src = binarize(val_src, 3) 
+    val_tgt = binarize(val_tgt, 3)
+    test_src = binarize(test_src, 3)
+    test_tgt = binarize(test_tgt, 3)
 
-            loss = loss_fn(outputs, labels)
-            loss.backward()
-            optimizer.step()
+    sparsity = np.count_nonzero(train)/(train.shape[0]*train.shape[1])*100
+    print(f"sparsity: {sparsity:.2f}%")
 
-            # collect metrics
-            running_loss += loss.item()
+    model = StandardVAE(
+        n_users = train.shape[0], 
+        original_dim = train.shape[1],
+        intermediate_dim=250, 
+        latent_dim=50, 
+        n_epochs=1, 
+        batch_size=1, 
+        k=10, 
+        verbose=1, 
+        seed=4, 
+        save_path="models/svae.hdf5", 
+        drop_encoder=0.5, 
+        drop_decoder=0.5, 
+        annealing=False, 
+        beta=1.0) 
 
-            if (i % loss_interval) == (loss_interval - 1): 
-                train_loss.append(running_loss / loss_interval)
-                tqdm.write(f"[{epoch + 1}, {i + 1:5d}] loss: {running_loss / loss_interval:.3f}")
-                running_loss = 0 
+    model.fit(
+        x_train=train, 
+        x_valid=val, 
+        x_val_tr=val_src, 
+        x_val_te=val_tgt, 
+        mapper=val_matrix,
+        )
     
     tqdm.write("Training complete!") 
 
-    return train_loss 
+    return model
 
 def predict(loader, model): 
     """
@@ -144,26 +135,7 @@ def predict(loader, model):
     preds = []
     probas = []
 
-    # Reduce the memory required for a forward pass by disabling the 
-    # automatic gradient computation (i.e. commit to not call backward()
-    # after this pass)
-    with torch.no_grad(): 
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-        model = model.to(device) 
-        model.eval() 
-
-        # Compute the logits for every class and grab the class
-        # TODO: switch this to top-k? 
-        for i, data in enumerate(loader): 
-            inputs, _ = data
-            inputs = inputs.to(device)
-            outputs = model(inputs) 
-
-            predictions = outputs.to("cpu").flatten()
-            preds.append(torch.argmax(predictions))
-            probas.append(predictions)
-
-    return preds, probas
+    #TODO: implement
 
 def test(model, dataset):
     """
@@ -180,7 +152,9 @@ def save_model(model, path):
     NOTE: borrowed from vision project
     """
     filename = os.path.join(path, "ae.pt")
-    torch.save(model, filename)
+    
+    #TODO: implement
+
     tqdm.write(f"Model saved to {filename}")
 
     return filename
@@ -191,7 +165,9 @@ def load_model(path):
 
     NOTE: borrowed from vision project
     """
-    model = torch.load(os.path.join(path, "ae.pt"), weights_only=False)
+    model = None
+
+    #TODO: implement
 
     return model
 
@@ -199,6 +175,8 @@ def summarize_history(history):
     """
     Mine some salient history 
     """
+    #TODO: update or discard 
+    
     df = pd.DataFrame(history) 
     s = (f"***************************\n")
     s += f"Completed {df.epoch.max():.4} epochs ({df.step.max()} steps)\n"
