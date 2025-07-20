@@ -5,8 +5,8 @@ import cfnn
 import naive
 import tempfile
 import glob
-import dataset
 import asyncio 
+import dataset 
 from process import run_subprocess
 
 def deploy_demo(token): 
@@ -96,22 +96,29 @@ def router():
     Argument processor and router
 
     @NOTE: Argparsing with help from chatgpt: https://chatgpt.com/share/685ee2c0-76c8-8013-abae-304aa04b0eb1
+    @NOTE: arg parsing logic incorporates word from NLP assignment
     """
 
-    parser = argparse.ArgumentParser("forklift", description="Code repository data synthesis and LLM fine-tuning")
+    parser = argparse.ArgumentParser("deepcart", description="Amazpon electronics recommendations via variational autoencoder")
 
     subparsers = parser.add_subparsers(dest="mode", required=True)
 
     # Build mode 
     build_parser = subparsers.add_parser("build") 
-    build_parser.add_argument("--inputs", nargs="+", type=readable_dir, help="List of code directories to target, one dataset file will be emitted for each", required=True)
-    build_parser.add_argument("--dataset", help="Directory to write resulting dataset to", required=True)
+    build_parser.add_argument("--items-file", type=readable_file, help="File to containing item metadata", default="data/2023/items_1.6M.parquet", required=False)
+    build_parser.add_argument("--reviews-file", type=readable_file, help="File to contining review data", default="data/2023/reviews_10M.parquet", required=False)
+    build_parser.add_argument("--min-ratings", type=int, help="Minimum threshold for number of ratings by a user", default=10, required=False)
+    build_parser.add_argument("--min-interactions", type=int, help="Minimum number of interactions an item must have to be included", default=10, required=False)
+    build_parser.add_argument("--sample-n", type=float, help="Number of users to sample from the total", default=10000, required=False)
+    build_parser.add_argument("--output-dir", type=readable_dir, help="Directory to write resulting dataset to", default="data/processed", required=False)
+    build_parser.add_argument("--data-tag", type=str, help="Friendly name to tag dataset names with", required=True)
 
     # Train mode 
     train_parser = subparsers.add_parser("train") 
-    train_parser.add_argument("--dataset", type=readable_file, help="File containing input dataset to train on ", required=True)
-    train_parser.add_argument("--model_dir", help="Directory to write resulting model to", required=True)
-    train_parser.add_argument("--nn_steps", type=int, default=-1)
+    train_parser.add_argument("--data-dir", type=readable_dir, help="Directory to look for tagged dataset", default="data/processed", required=False)
+    train_parser.add_argument("--data-tag", type=str, help="Dataset tag to look for (set during creation)", required=True)
+    train_parser.add_argument("--model-dir", help="Directory to write resulting model to", required=False, default="models")
+    train_parser.add_argument("--nn_steps", type=int, default=1)
     train_parser.add_argument("--nn_epochs", type=int, default=3)
     train_parser.add_argument("--nn_batch", type=int, default=8)
     train_parser.add_argument("--type", choices=['naive', 'classic', 'neural'], default='neural')
