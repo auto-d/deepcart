@@ -7,7 +7,6 @@ from sklearn.base import BaseEstimator
 from sklearn.metrics.pairwise import cosine_similarity
 import pickle
 import string 
-from naive import tokenize, clean, lemmatize, similarity
 
 class CfnnEstimator(BaseEstimator): 
     
