@@ -30,26 +30,26 @@ def build(items_path, reviews_path, tag, output_dir, min_ratings, sample_n):
     reviews = pd.read_parquet(reviews_path) 
     items = pd.read_parquet(items_path)    
     users = extract_users(reviews)
-    print(f"Found {len(users)} with {len(reviews)} ratings of {len(items)} items.}")
+    print(f"Found {len(users):,} users with {len(reviews):,} ratings of {len(items):,} items.")
 
     users_small = users[users.ratings >= min_ratings]
-    print(f"Dropped {len(users)-len(users_small)} users (rating <{min_ratings})")
+    print(f"Dropped {len(users)-len(users_small):,} users (rating <{min_ratings})")
 
     reviews_small = reviews[reviews.user_id.isin(users_small.user_id.unique())]
 
     sampled_users = users_small.sample(sample_n)
     reviews_sampled = reviews_small[reviews_small.user_id.isin(sampled_users.user_id)]
-    print(f"Dropped {len(reviews_small)-len(reviews_sampled)} reviews (no user associated)")
+    print(f"Dropped {len(reviews_small)-len(reviews_sampled):,} reviews (no user associated)")
 
     items_small = items[items.parent_asin.isin(reviews_sampled.parent_asin.unique())]    
-    print(f"Dropped {len(items)-len(items_small)} items (no review associated`)")
+    print(f"Dropped {len(items)-len(items_small):,} items (no review associated)")
         
     reviews_file = os.path.join(output_dir,f"reviews_{tag}.parquet")
-    print(f"Writing {len(reviews_sampled)} reviews as {reviews_file}...")
+    print(f"Writing {len(reviews_sampled):,} reviews as {reviews_file}...")
     reviews_sampled.to_parquet(reviews_file)
 
-    print(f"Writing {len(items_small)} items as {items_file}...")
     items_file = os.path.join(output_dir,f"items_{tag}.parquet")
+    print(f"Writing {len(items_small):,} items as {items_file}...")    
     items_small.to_parquet(items_file)
         
     print(f"Wrote '{tag}' dataset to {output_dir}.")
