@@ -128,10 +128,7 @@ def save_model(model, path):
     """    
     filename = os.path.join(path, 'cfnn.pkl')
 
-    with open(filename, 'wb') as f:         
-        
-        #TODO: get model and save
-
+    with open(filename, 'wb') as f:
         pickle.dump(model, f)
     
     tqdm.write(f"Model saved to {path}")
