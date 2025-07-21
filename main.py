@@ -159,18 +159,18 @@ def router():
             args.sample_n)
 
     elif args.mode == "train":
+        users, reviews, _ = dataset.load(args.data_dir, args.data_tag)
         if args.type == 'naive':
             #naive.train(args.dataset, args.model_dir)
             pass
         if args.type == 'classic':
-            #hmm.train(args.dataset, args.model_dir) 
-            pass
+            model = cfnn.train(users, reviews) 
+            cfnn.save_model(model, args.model_dir)
         if args.type == 'neural': 
-            users, reviews, _ = dataset.load(args.data_dir, args.data_tag)
+            #TODO: move this logic into the autoencoder's train method             
             model = autoencoder.train(
                 users, 
                 reviews, 
-                args.model_dir, 
                 args.nn_epochs)
             autoencoder.save_model(model, args.model_dir)
 

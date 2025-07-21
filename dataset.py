@@ -1,3 +1,4 @@
+import sys 
 import os
 import pandas as pd
 
@@ -80,6 +81,11 @@ def load(dir, tag):
     print(f"Extracting users ... ")
     users = extract_users(reviews)
 
-    print(f"Non-sparse user-item matrix will be {len(users) * len(items):,} elements.")
+    print(f"Memory usage:") 
+    print(f" - reviews ~{sys.getsizeof(reviews):,} bytes)")
+    print(f" - items ~{sys.getsizeof(items):,} bytes)")
+    print(f" - users ~{sys.getsizeof(users):,} bytes)")
+
+    print(f"Non-sparse user-item matrix will be {len(users) * len(items):,} elements!")
 
     return users, reviews, items
