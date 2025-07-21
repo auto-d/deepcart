@@ -7,7 +7,7 @@ import pandas as pd
 from sklearn.base import BaseEstimator 
 from sklearn.metrics.pairwise import cosine_similarity
 from recommenders.datasets.sparse import AffinityMatrix
-import similarity 
+from similarity import pearson_similarity
 import dataset 
 
 class CfnnEstimator(BaseEstimator):
@@ -24,9 +24,10 @@ class CfnnEstimator(BaseEstimator):
         self.i_map = None
         self.model = None
 
-    def fit(self, reviews, top_k): 
+    def fit(self, reviews, top_k, similarity='pearson'): 
         """
-        Fit our estimator
+        Fit our estimator providing a list of user reviews and the top correlated users to 
+        retain in the model for recommendations. 
         """ 
         header = {
             "col_user": "user_id",
@@ -47,7 +48,7 @@ class CfnnEstimator(BaseEstimator):
         # these are not sparse. Since our goal is recommending items, we'll compute the similarity
         # iterativealy and store the most similar users to get down to C * u memory pattern
         similarity_matrix = np.array([[0.] * top_k] * len(u_map))
-        for a in range(len(u_map)): 
+        for a in tqdm(range(len(u_map))): 
 
             # Collect our similarities w/ respect to user A
             sim_a = {}
@@ -68,8 +69,12 @@ class CfnnEstimator(BaseEstimator):
                     a_items[a_items==0] = 3
                     b_items[b_items==0] = 3
                     
-                    # TODO: swap this out for pearson to capture magnitude
-                    sim_a[b] = cosine_similarity([a_items], [b_items])[0][0]
+                    # Cosine similarity risks insensitivity to rating value, while imperfect here, 
+                    # Pearson similarity gets us sensitivty to rating magnitude and trends
+                    if similarity=='pearson': 
+                        sim_a[b] = pearson_similarity(a_items, b_items)
+                    else: 
+                        sim_a[b] = cosine_similarity([a_items], [b_items])[0][0]
                     
             # Find and store the top k user matches, in order    
             # NOTE: dict sorting logic courtesy of gpt-4o (https://chatgpt.com/share/687dc72f-54b4-8013-806e-b1de20d0ef12)
@@ -129,7 +134,7 @@ def save_model(model, path):
 
         pickle.dump(model, f)
     
-    print (f"Model saved to {path}")
+    tqdm.write(f"Model saved to {path}")
 
     return filename
 
@@ -151,7 +156,7 @@ def load_model(path):
 
 def train(users, reviews, top_k=5): 
     """
-    'Train' the model     
+    Train the model     
     """
     model = CfnnEstimator() 
     model.fit(reviews, top_k)
@@ -159,7 +164,7 @@ def train(users, reviews, top_k=5):
 
 def test(model, dataset):
     """
-    Test the hmm model 
+    Test the CFNN model 
     """
     X, y = load_dataset(dataset)
     # See comment in train() above

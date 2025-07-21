@@ -1,4 +1,5 @@
 import numpy as np
+from scipy.stats import pearsonr
 from sklearn.metrics.pairwise import cosine_similarity
 from openai import OpenAI
 
@@ -14,7 +15,7 @@ def embed(text):
     response = client.embeddings.create(model="nomic-embed-text:latest", input=text)
     return response.data[0].embedding
 
-def similarity(a, b): 
+def cosine_similarity(a, b): 
     """
     Return pairwise similarity between elements in passed arrays
     """
@@ -22,3 +23,9 @@ def similarity(a, b):
     pairwise_similarity = np.diag(similarity_matrix)[0]
 
     return float(pairwise_similarity)
+
+def pearson_similarity(a, b):
+    """
+    Compute Pearson similarity
+    """
+    return (1 + pearsonr(a, b)) / 2
