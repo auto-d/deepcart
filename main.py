@@ -103,14 +103,10 @@ def nonexistent_dir(path):
             raise argparse.ArgumentTypeError(f"Path '{path}' exists and is not a directory.")
     return path
 
-def router(): 
+def build_parser(): 
     """
-    Argument processor and router
-
-    @NOTE: Argparsing with help from chatgpt: https://chatgpt.com/share/685ee2c0-76c8-8013-abae-304aa04b0eb1
-    @NOTE: arg parsing logic incorporates work from NLP assignment
+    Apply a command-line schema, returning a parser
     """
-
     parser = argparse.ArgumentParser("deepcart", description="Amazpon electronics recommendations via variational autoencoder")
 
     subparsers = parser.add_subparsers(dest="mode", required=True)
@@ -145,9 +141,20 @@ def router():
     deploy_parser.add_argument("--type", choices=['naive', 'classic', 'neural'], default='neural')
     deploy_parser.add_argument("--refresh",  action="store_true", help="Whether or not to refresh the server code prior to deployment.", default=False)
     
-    args = parser.parse_args()
+    return parser
     
-    hf_token = load_secrets()
+def router(): 
+    """
+    Argument processor and router
+
+    @NOTE: Argparsing with help from chatgpt: https://chatgpt.com/share/685ee2c0-76c8-8013-abae-304aa04b0eb1
+    @NOTE: arg parsing logic incorporates work from NLP assignment
+    """
+
+    parser = build_parser() 
+    args = parser.parse_args()    
+    token = load_secrets()
+    
     match(args.mode):
         case "build":
             dataset = DeepCartDataset(args.tag)
@@ -177,18 +184,21 @@ def router():
 
         case  "test":
             dataset = DeepCartDataset(args.data_tag)
-            if args.type == 'naive':
-                naive.test(args.model_dir, dataset)
-                pass
-            if args.type == 'classic':
-                cfnn.test(args.model_dir, dataset) 
-                pass
-            if args.type == 'neural': 
-                autoencoder.test(args.model_dir, args.dataset)
+
+            match (args.type): 
+                case 'naive':
+                    model = naive.load_model(args.model_dir)
+                    naive.test(model, dataset.test, dataset.test_chk)
+                case 'classic':
+                    model = cfnn.load_model(args.model_dir)
+                    cfnn.test(model, dataset.test, dataset.test_chk) 
+                case 'neural': 
+                    model = autoencoder.load_model(args.model_dir)
+                    autoencoder.test(model, dataset.test, dataset.test_chk)
 
         case "deploy":
-            if hf_token: 
-                deploy(args.model_dir, hf_token, args.refresh)
+            if token: 
+                deploy(args.model_dir, token, args.refresh)
             else: 
                 print("No huggingface token found!")
         case _:
