@@ -5,35 +5,62 @@ import pandas as pd
 from sklearn.base import BaseEstimator 
 import matplotlib.pyplot as plt
 import pickle
-import string 
-from similarity import similarity
+import random
+import similarity
 
 class NaiveEstimator(BaseEstimator): 
+    """
+    Estimator that grabs the most popular items out of the user-item matrix 
+    and vomits them back at prediction time.
+    """
     
     def __init__(self):
         """
         Set up an instance of our naive estimator 
         """
-        pass
+        self.item_ratings = None
 
-    def fit(self, X, y): 
+    def fit(self, train, val, val_chk): 
         """
         Fit our naive estimator
         """ 
+        ui, u_map, i_map = train.gen_affinity_matrix() 
 
-        #TODO: implement 
+        item_ratings = [0] * len(i_map)
+        for i in tqdm(i_map): 
+            
+            ratings = []
+            for u in range(len(u_map)): 
+                if ui[u][i] != 0: 
+                    ratings.append(ui[u][i])
+            
+            item_ratings[i] = np.mean(ratings)
         
+        self.item_ratings = item_ratings
+         
         return self
-
-    def predict(self, X) -> np.ndarray: 
+        
+    def predict(self, ui) -> np.ndarray: 
         """
-        Generate an answer given a prompt/input/question
+        Generate a prediction given a list of item ratings (one per user)
         """
         preds = []
+                
         tqdm.write(f"Running predictions... ")
-        for x in tqdm(list(X), total=len(X)): 
-            #TODO: implement 
-            preds.append(None)
+        ui, u_map, i_map = ui.gen_affinity_matrix() 
+
+        # For each requested prediction (user), find the best-reviewed items that this 
+        # user hasn't already reviewed... 
+        for u in tqdm(range(len(u_map))): 
+            rated = list(np.nonzero(ui[u])[0]) 
+            recommended = []
+            while len(recommended) < 10: 
+                best_rated = similarity.argmax_(ui[0], exclude=rated + recommended)
+                recommended.append(best_rated) 
+
+            # Retrieve the item ID and aggregate rating by the cached item index
+            recommendations = [ { similarity.find_key(i_map, i): ui[u][i] } for i in recommended ]
+            preds.append(recommendations)
 
         return preds 
     
@@ -43,19 +70,13 @@ class NaiveEstimator(BaseEstimator):
         """        
         y_hat = self.predict(X)
 
+        #TODO: implement
         scores = []
         tqdm.write(f"Scoring predictions...")
         for a, b in tqdm(zip(y, y_hat), total=len(y)): 
             scores.append(similarity(a, b)) 
 
         return scores
-
-def load_dataset(file): 
-    """
-    Load and return a compatible dataset for the naive classifier
-    """
-    df = pd.read_parquet(file)
-    return df['x'], df['y']
 
 def save_model(model, path):
     """
@@ -87,20 +108,17 @@ def load_model(path):
 
     return model
 
-def train(dataset, model_dir): 
+def train(train): 
     """
     'Train' the naive model 
     """
-    
-    X, y  = load_dataset(dataset)
-    model = NaiveEstimator().fit(X, y)
-    save_model(model, model_dir)
 
-def test(model_dir, dataset):
+    return NaiveEstimator().fit(train)
+
+def test(model, test, test_chk):
     """
     Test the naive model 
     """
-    X, y = load_dataset(dataset)
-    model = load_model(model_dir)    
-    scores = model.score(X, y)
+    preds = model.predict(test)
+    scores = model.score(preds, test_chk)
     tqdm.write(f"Naive mean scores for the provided dataset: {np.mean(scores)}")

@@ -110,9 +110,11 @@ class DeepCartDataset():
 
         print(f"Non-sparse user-item matrix will be {len(users) * len(items):,} elements!")
 
-        return users, reviews, items
+        self.reviews = reviews
+        self.items = items 
+        self.user = users         
 
-    def split(self, users, reviews, items):
+    def split(self):
         """
         Generate sparse matrices for training splits as follows: 
         - self.train : training matrix
@@ -126,17 +128,17 @@ class DeepCartDataset():
         [0] is the first user in the list, with ratings for all items in that row
 
         """
-        print(f"Full user-item matrix is {len(users) * len(items)}")
+        print(f"Full user-item matrix is {len(self.users) * len(self.items)}")
 
         # NOTE: Strategy adapted from tutorials available in the Recommenders project, see 
         # https://github.com/recommenders-team/recommenders/tree/main
         # Split along user boundaries to ensure no leakage of preference between train and test
-        train_users, test_users, val_users = python_random_split(users, [.9, .05, .05])
+        train_users, test_users, val_users = python_random_split(self.users, [.9, .05, .05])
         print(train_users.shape, test_users.shape, val_users.shape)
 
-        train = reviews[reviews.user_id.isin(train_users.user_id)]
-        val = reviews[reviews.user_id.isin(val_users.user_id)]
-        test = reviews[reviews.user_id.isin(test_users.user_id)]
+        train = self.reviews[self.reviews.user_id.isin(train_users.user_id)]
+        val = self.reviews[self.reviews.user_id.isin(val_users.user_id)]
+        test = self.reviews[self.reviews.user_id.isin(test_users.user_id)]
         print(train.shape, val.shape, test.shape)
 
         # Technique from Recommenders (see https://github.com/recommenders-team/recommenders/blob/45e1b215a35e69b92390e16eb818d4528d0a33a2/examples/02_model_collaborative_filtering/standard_vae_deep_dive.ipynb) 

@@ -29,3 +29,22 @@ def pearson_similarity(a, b):
     Compute Pearson similarity
     """
     return (1 + pearsonr(a, b)) / 2
+
+def find_key(dict_, val): 
+    """
+    Return the key associated with a value
+    """
+    for k, v in dict_.items(): 
+        if v == val: 
+            return k
+    
+def argmax_(list_, exclude): 
+    """
+    Argmax with a list of indices to include, and exclude
+    """    
+    max_i = 0 
+    for i, a in enumerate(list_): 
+        if i not in exclude: 
+            if a > list_[max_i]: 
+                max_i = i 
+    return max_i 
