@@ -9,7 +9,7 @@ import naive
 import tempfile
 import glob
 import asyncio 
-from dataset import DeepCartDataset
+from dataset import DeepCartDataset, DeepCartTorchDataset
 from process import run_subprocess
 
 def deploy_demo(token): 
@@ -109,7 +109,7 @@ def build_parser():
     """
     Apply a command-line schema, returning a parser
     """
-    parser = argparse.ArgumentParser("deepcart", description="Amazpon electronics recommendations via variational autoencoder")
+    parser = argparse.ArgumentParser("deepcart", description="Amazon electronics recommendations via variational autoencoder")
 
     subparsers = parser.add_subparsers(dest="mode", required=True)
 
@@ -181,7 +181,8 @@ def router():
                     model = cfnn.train(dataset.train, dataset.val, dataset.val_chk) 
                     cfnn.save_model(model, args.model_dir)
                 case 'neural': 
-                    model = autoencoder.train(dataset, args.nn_epochs)
+                    loader = DeepCartTorchDataset(dataset.train).get_data_loader()
+                    model = autoencoder.train(loader, args.nn_epochs)                    
                     autoencoder.save_model(model, args.model_dir)
 
         case  "test":
@@ -196,7 +197,8 @@ def router():
                     cfnn.test(model, dataset.test, dataset.test_chk) 
                 case 'neural': 
                     model = autoencoder.load_model(args.model_dir)
-                    autoencoder.test(model, dataset.test, dataset.test_chk)
+                    loader = DeepCartTorchDataset(dataset.test).get_data_loader()                     
+                    autoencoder.test(model, loader, dataset.test_chk)
 
         case "deploy":
             if token: 

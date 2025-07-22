@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 from sklearn.base import BaseEstimator 
 from sklearn.metrics.pairwise import cosine_similarity
+from recommenders.evaluation.python_evaluation import map_at_k, ndcg_at_k, precision_at_k, recall_at_k
 import similarity
 
 class CfnnEstimator(BaseEstimator):
@@ -200,15 +201,13 @@ def train(train, top_k=5):
     Train the model     
     """
     model = CfnnEstimator() 
-    model.fit(reviews, top_k)
+    model.fit(train, top_k)
     return model     
 
-def test(model, dataset):
+def test(model, test, test_chk):
     """
     Test the CFNN model 
     """
-    X, y = load_dataset(dataset)
-    # See comment in train() above
-    # model = load_model(model_dir)    
-    scores = model.score(X, y)
-    tqdm.write(f"Collaborative nearest neighbor mean scores for the provided dataset: {np.mean(scores)}")
+    top_ks = model.recommend(test)
+    scores = model.score(top_ks, test, test_chk)
+    tqdm.write(f"Naive mean scores for the provided dataset: {np.mean(scores)}")

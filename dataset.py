@@ -187,32 +187,31 @@ class DeepCartDataset():
 
 class DeepCartTorchDataset(torch.utils.data.Dataset):
 
-    @classmethod
-    def get_data_loader(cls, batch_size=5, shuffle=True): 
+    def __init__(self, matrix:AffinityMatrix): 
         """
-        Retrieve a pytorch-style dataloader that loads data via instances of 
-        this class
+        Initialize a new instance given a sparse matrix of reviews
         """
-
-        # TODO: scale data to [0, 1] ?  we'll have to do this on prediction as well... 
-        # perhaps elsewhere? 
-        transform = torch.transforms.Scale(mean=[0.5], std=[0.5])
-
-        data = DeepCartTorchDataset(transform=transform)
-        loader = torch.utils.data.DataLoader(data, batch_size=batch_size, shuffle=shuffle)
+        self.ui, self.u_map, self.i_map = matrix.gen_affinity_matrix()
         
-        #return loader
-        pass
+        # Scale reviews to [0,1] for our network 
+        self.ui_float = np.divide(self.ui/5)
 
     def __len__(self): 
         """
         Retrieve length of the dataset
         """
-        return len(self.img_labels) 
+        return len(self.ui) 
     
     def __getitem__(self, idx): 
         """
         Retrieve an item at the provided index
         """
-        #TODO: implement
-        pass
+        return self.ui[idx]
+
+    def get_data_loader(self, batch_size=5, shuffle=True): 
+        """
+        Retrieve a pytorch-style dataloader that loads data with this instance
+        """
+        loader = torch.utils.data.DataLoader(self, batch_size=batch_size, shuffle=shuffle)
+        
+        return loader

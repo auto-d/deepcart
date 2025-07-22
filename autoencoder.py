@@ -1,6 +1,7 @@
 import os
 import math 
 import torch 
+import numpy as np 
 import pandas as pd 
 from tqdm import tqdm
 import torch.nn as nn
@@ -43,27 +44,28 @@ class Autoencoder(nn.Module):
 
         return r
 
-def train(loader, model, loss_interval=20, epochs=2, lr=0.01, momentum=0.9):
+def train(train, top_k=5, epochs=2, lr=0.01, momentum=0.5):
     """
-    Train the model with the provided dataset
+    Train the model with the provided user-item dataset
 
-    NOTE: this is a similar training loop as we used for our vision model in the 
-    the vision project, forward pass
     """
     device = "cuda" if torch.cuda.is_available() else "cpu"
     
     train_loss = []
 
-    tqdm.write(f"Starting training run...")    
+    tqdm.write(f"Starting training run...")
+    
     # TODO: configure WandB
-    # see https://docs.wandb.ai/guides/integrations/pytorch/
+    # see https://docs.wandb.ai/guides/integrations/pytorch/    
     config = {}
     run = wandb.init(config=config) 
 
-    model.train()
+    ui, u_map, i_map = train.gen_affinity_matrix() 
+    
+    model = Autoencoder(len(i_map)) 
     model = model.to(device)
     
-    loss_fn = nn.CrossEntropyLoss()
+    loss_fn = nn.MSELoss()
 
     optimizer = optim.SGD(model.parameters(), lr=lr, momentum=momentum)
 
@@ -98,3 +100,11 @@ def train(loader, model, loss_interval=20, epochs=2, lr=0.01, momentum=0.9):
     tqdm.write("Training complete!") 
 
     return train_loss 
+
+def test(model, test, test_chk):
+    """
+    Test the autoencoder model 
+    """
+    top_ks = model.recommend(test)
+    scores = model.score(top_ks, test, test_chk)
+    tqdm.write(f"Naive mean scores for the provided dataset: {np.mean(scores)}")
