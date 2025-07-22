@@ -5,7 +5,7 @@ import pandas as pd
 from sklearn.base import BaseEstimator 
 import matplotlib.pyplot as plt
 import pickle
-import random
+from recommenders.evaluation.python_evaluation import map_at_k, ndcg_at_k, precision_at_k, recall_at_k
 import similarity
 
 class NaiveEstimator(BaseEstimator): 
@@ -26,6 +26,7 @@ class NaiveEstimator(BaseEstimator):
         """ 
         ui, u_map, i_map = train.gen_affinity_matrix() 
 
+        # Assemble a list of the mean ratings for reviewed items
         item_ratings = [0] * len(i_map)
         for i in tqdm(i_map): 
             
@@ -40,11 +41,11 @@ class NaiveEstimator(BaseEstimator):
          
         return self
         
-    def predict(self, ui) -> np.ndarray: 
+    def recommend(self, ui, k) -> np.ndarray: 
         """
-        Generate a prediction given a list of item ratings (one per user)
+        Generate top k predictions given a list of item ratings (one per user)
         """
-        preds = []
+        recommendations = []
                 
         tqdm.write(f"Running predictions... ")
         ui, u_map, i_map = ui.gen_affinity_matrix() 
@@ -54,29 +55,40 @@ class NaiveEstimator(BaseEstimator):
         for u in tqdm(range(len(u_map))): 
             rated = list(np.nonzero(ui[u])[0]) 
             recommended = []
-            while len(recommended) < 10: 
-                best_rated = similarity.argmax_(ui[0], exclude=rated + recommended)
+            
+            while len(recommended) < k: 
+                best_rated = similarity.argmax_(self.item_ratings, exclude=rated + recommended)
                 recommended.append(best_rated) 
-
-            # Retrieve the item ID and aggregate rating by the cached item index
-            recommendations = [ { similarity.find_key(i_map, i): ui[u][i] } for i in recommended ]
-            preds.append(recommendations)
-
-        return preds 
+                
+                # Recommendations need to be in a format suitable for scoring w/ the 
+                # Recommenders MAP@K. I.e. dataframe with cols user, item & rating             
+                row = [
+                    similarity.find_key(u_map, u), 
+                    similarity.find_key(i_map, best_rated), 
+                    self.item_ratings[best_rated]
+                    ]
+                recommendations.append(row)
+        
+        df = pd.DataFrame(recommendations, columns=['user_id', 'item_id', 'rating']) 
+        return df 
     
-    def score(self, X, y):
+    def score(self, top_ks, test, test_chk, k=10):
         """
-        Sklearn expectation for CV scoring 
+        Employ the recommenders library to calculate MAP@K here. 
+        NOTE: Recommenders examples used to source call semantics, see e.g.
+        https://github.com/recommenders-team/recommenders/blob/main/examples/02_model_collaborative_filtering/standard_vae_deep_dive.ipynb
         """        
-        y_hat = self.predict(X)
 
-        #TODO: implement
-        scores = []
-        tqdm.write(f"Scoring predictions...")
-        for a, b in tqdm(zip(y, y_hat), total=len(y)): 
-            scores.append(similarity(a, b)) 
+        tqdm.write(f"Scoring recommendations... ")
 
-        return scores
+        recs_df = test.map_back_sparse(top_ks, kind='prediction')
+        test_df = test.map_back_sparse(test_chk, kind='ratings')
+
+        map = map_at_k(test_df, recs_df, col_prediction='prediction', k=k)
+        
+        tqdm.write(f"MAP@K (k={k}): {map}")
+
+        return map
 
 def save_model(model, path):
     """
@@ -112,13 +124,12 @@ def train(train):
     """
     'Train' the naive model 
     """
-
     return NaiveEstimator().fit(train)
 
 def test(model, test, test_chk):
     """
     Test the naive model 
     """
-    preds = model.predict(test)
-    scores = model.score(preds, test_chk)
+    top_ks = model.recommend(test)
+    scores = model.score(top_ks, test, test_chk)
     tqdm.write(f"Naive mean scores for the provided dataset: {np.mean(scores)}")
