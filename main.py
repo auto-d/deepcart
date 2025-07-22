@@ -7,7 +7,7 @@ import naive
 import tempfile
 import glob
 import asyncio 
-import dataset 
+from dataset import DeepCartDataset
 from process import run_subprocess
 
 def deploy_demo(token): 
@@ -136,7 +136,7 @@ def router():
     # Test mode 
     test_parser = subparsers.add_parser("test") 
     test_parser.add_argument("--model_dir", type=readable_dir, help="Directory to load model from")
-    test_parser.add_argument("--dataset", type=readable_file, help="Dataset to test model on")
+    test_parser.add_argument("--data-tag", type=str, help="Dataset tag to look for (set during creation)", required=True)
     test_parser.add_argument("--type", choices=['naive', 'classic', 'neural'], default='neural')
 
     # Deploy mode 
@@ -148,49 +148,51 @@ def router():
     args = parser.parse_args()
     
     hf_token = load_secrets()
-    if args.mode == "build":
-        dataset.build(
-            args.items_file, 
-            args.reviews_file, 
-            args.tag, 
-            args.output_dir, 
-            args.min_interactions, 
-            args.min_ratings, 
-            args.sample_n)
+    match(args.mode):
+        case "build":
+            dataset = DeepCartDataset(args.tag)
+            dataset.extract(
+                args.items_file, 
+                args.reviews_file,
+                args.min_interactions, 
+                args.min_ratings, 
+                args.sample_n)
+            dataset.store(args.output_dir)
 
-    elif args.mode == "train":
-        users, reviews, _ = dataset.load(args.data_dir, args.data_tag)
-        if args.type == 'naive':
-            #naive.train(args.dataset, args.model_dir)
-            pass
-        if args.type == 'classic':
-            model = cfnn.train(users, reviews) 
-            cfnn.save_model(model, args.model_dir)
-        if args.type == 'neural': 
-            #TODO: move this logic into the autoencoder's train method             
-            model = autoencoder.train(
-                users, 
-                reviews, 
-                args.nn_epochs)
-            autoencoder.save_model(model, args.model_dir)
+        case "train":
+            dataset = DeepCartDataset(args.data_tag)
+            dataset.load(args.data_dir)
+            dataset.split()
 
-    elif args.mode == "test":
-        if args.type == 'naive':
-            #naive.test(args.model_dir, args.dataset)
-            pass
-        if args.type == 'classic':
-            #hmm.test(args.model_dir, args.dataset) 
-            pass
-        if args.type == 'neural': 
-            autoencoder.test(args.model_dir, args.dataset)
+            match(args.type): 
+                case 'naive':
+                    model = naive.train(dataset)
+                    naive.save_model(model, args.model_dir)
+                case 'classic':
+                    model = cfnn.train(dataset.train, dataset.val, dataset.val_chk) 
+                    cfnn.save_model(model, args.model_dir)
+                case 'neural': 
+                    model = autoencoder.train(dataset, args.nn_epochs)
+                    autoencoder.save_model(model, args.model_dir)
 
-    elif args.mode == "deploy":            
-        if hf_token: 
-            deploy(args.model_dir, hf_token, args.refresh)
-        else: 
-            print("No huggingface token found!")
-    else:
-        parser.print_help()
+        case  "test":
+            dataset = DeepCartDataset(args.data_tag)
+            if args.type == 'naive':
+                naive.test(args.model_dir, dataset)
+                pass
+            if args.type == 'classic':
+                cfnn.test(args.model_dir, dataset) 
+                pass
+            if args.type == 'neural': 
+                autoencoder.test(args.model_dir, args.dataset)
+
+        case "deploy":
+            if hf_token: 
+                deploy(args.model_dir, hf_token, args.refresh)
+            else: 
+                print("No huggingface token found!")
+        case _:
+            parser.print_help()
 
 if __name__ == "__main__": 
     router()

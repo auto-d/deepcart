@@ -1,96 +1,215 @@
 import sys 
 import os
 import pandas as pd
+import numpy as np 
+from recommenders.datasets.sparse import AffinityMatrix
+from recommenders.datasets.python_splitters import python_random_split
+from recommenders.datasets.python_splitters import python_stratified_split 
+import torch 
 
-def extract_users(reviews): 
+class DeepCartDataset(): 
     """
-    Given reviews, generate a user dataframe     
-    """
-    users = reviews.groupby(['user_id']).rating.count()
-    users = pd.DataFrame(users).reset_index()
-    users.rename(columns={'rating':'ratings'}, inplace=True)
-    return users 
-
-def build(items_path, reviews_path, tag, output_dir, min_interactions, min_ratings, sample_n): 
-    """
-    Given review and item data, prepare a cleaned dataset for training
-
-    NOTE: the full Amazon dataset processing consumes more RAM than I have available, this
-    was preprocessed on the command-line to discard non-essential features and move to a 
-    parquet format (from jsonl) to make it manageable. We operate on these preprocessed files
-    here. 
+    Abstraction for the review-driven dataset that supports our recommenders. 
     """
     
-    os.makedirs(output_dir, exist_ok=True)
+    def __init__(*self, tag): 
+        """
+        Set up the instance, deferring creation/load given the memory-intensive nature
+        """
+        self.tag = tag
+        self.users = None
+        self.reviews = None
+        self.items = None
 
-    print(f"Generating dataset based on {items_path} and {reviews_path}...")
+    def find_users(self, reviews): 
+        """
+        Given reviews, generate a user dataframe     
+        """
+        users = reviews.groupby(['user_id']).rating.count()
+        users = pd.DataFrame(users).reset_index()
+        users.rename(columns={'rating':'ratings'}, inplace=True)
+        return users 
 
-    if not items_path.endswith(".parquet") or not reviews_path.endswith(".parquet"): 
-        raise ValueError("Unexpected file type!")
-    
-    reviews = pd.read_parquet(reviews_path) 
-    items = pd.read_parquet(items_path)    
-    users = extract_users(reviews)
-    print(f"Found {len(users):,} users with {len(reviews):,} ratings of {len(items):,} items.")
+    def extract(self, items_path, reviews_path, min_interactions, min_ratings, sample_n): 
+        """
+        Given raw review and item data files, prepare a cleaned, live dataset. 
+        """
+        print(f"Extracing dataset from on {items_path} and {reviews_path}...")
 
-    # Per dataset documentation we should always use parent_asin for correlations as 
-    # children are just color, etc... variations of the same product
-    reviews.rename(columns={'parent_asin':'item_id'}, inplace=True)
-    items.rename(columns={'parent_asin':'item_id'}, inplace=True)
-
-    # Products with few interactions are a weak signal -- we are looking to
-    # connect users and items that have tiny interaction graphs are not going to improve
-    # our macro-level predictions, but it will cost us in memory and compute
-    items_small = items[items.rating_number > min_ratings]
-    print(f"Dropped {len(items)-len(items_small):,} items (<{min_ratings} ratings)")
-
-    # Users with few interactions are also a weak signal -- without associations with 
-    # multiple products, we are not teaching the model about positive associations
-    users_small = users[users.ratings >= min_interactions]
-    print(f"Dropped {len(users)-len(users_small):,} users (reviews <{min_interactions})")
-
-    reviews_small = reviews[reviews.user_id.isin(users_small.user_id.unique())]
-
-    sampled_users = users_small.sample(sample_n)
-    reviews_sampled = reviews_small[reviews_small.user_id.isin(sampled_users.user_id)]
-    print(f"Dropped {len(reviews_small)-len(reviews_sampled):,} reviews (no user associated)")
-
-    items_smaller = items_small[items_small.item_id.isin(reviews_sampled.item_id.unique())]    
-    print(f"Dropped {len(items_small)-len(items_smaller):,} items (no review associated)")
+        if not items_path.endswith(".parquet") or not reviews_path.endswith(".parquet"): 
+            raise ValueError("Unexpected file type!")
         
-    reviews_file = os.path.join(output_dir,f"reviews_{tag}.parquet")
-    print(f"Writing {len(reviews_sampled):,} reviews as {reviews_file}...")
-    reviews_sampled.to_parquet(reviews_file)
+        reviews = pd.read_parquet(reviews_path) 
+        items = pd.read_parquet(items_path)    
+        users = self.find_users(reviews)
+        print(f"Found {len(users):,} users with {len(reviews):,} ratings of {len(items):,} items.")
 
-    items_file = os.path.join(output_dir,f"items_{tag}.parquet")
-    print(f"Writing {len(items_small):,} items as {items_file}...")    
-    items_small.to_parquet(items_file)
+        # Per dataset documentation we should always use parent_asin for correlations as 
+        # children are just color, etc... variations of the same product
+        reviews.rename(columns={'parent_asin':'item_id'}, inplace=True)
+        items.rename(columns={'parent_asin':'item_id'}, inplace=True)
 
-    print(f"Wrote '{tag}' dataset to {output_dir}.")
-    
-    print(f"Generation complete!")
+        # Products with few interactions are a weak signal -- we are looking to
+        # connect users and items that have tiny interaction graphs are not going to improve
+        # our macro-level predictions, but it will cost us in memory and compute
+        items_small = items[items.rating_number > min_ratings]
+        print(f"Dropped {len(items)-len(items_small):,} items (<{min_ratings} ratings)")
 
-def load(dir, tag): 
-    """
-    Read our datasets and return 
-    """    
-    reviews_path = os.path.join(dir, f"reviews_{tag}.parquet")
-    items_path = os.path.join(dir, f"items_{tag}.parquet")
+        # Users with few interactions are also a weak signal -- without associations with 
+        # multiple products, we are not teaching the model about positive associations
+        users_small = users[users.ratings >= min_interactions]
+        print(f"Dropped {len(users)-len(users_small):,} users (reviews <{min_interactions})")
 
-    print(f"Loading reviews... ")
-    reviews = pd.read_parquet(reviews_path) 
+        reviews_small = reviews[reviews.user_id.isin(users_small.user_id.unique())]
+
+        sampled_users = users_small.sample(sample_n)
+        self.reviews = reviews_small[reviews_small.user_id.isin(sampled_users.user_id)]
+        print(f"Dropped {len(reviews_small)-len(self.reviews):,} reviews (no user associated)")
+
+        self.items = items_small[items_small.item_id.isin(self.reviews.item_id.unique())]    
+        print(f"Dropped {len(items_small)-len(self.items):,} items (no review associated)")
         
-    print(f"Loading items... ")
-    items = pd.read_parquet(items_path)    
+        print(f"Generation complete!")
+
+    def store(self, dir_):
+        """ 
+        Write our dataset to disk 
+        """
+        os.makedirs(dir_, exist_ok=True)
+
+        reviews_file = os.path.join(dir_,f"reviews_{self.tag}.parquet")
+        print(f"Writing {len(self.reviews):,} reviews as {reviews_file}...")
+        self.reviews.to_parquet(reviews_file)
+
+        items_file = os.path.join(dir_,f"items_{self.tag}.parquet")
+        print(f"Writing {len(self.items):,} items as {items_file}...")    
+        self.items.to_parquet(items_file)
+
+        print(f"Wrote '{self.tag}' dataset to {dir_}.")
+
+    def load(self, dir_): 
+        """
+        Read our datasets off disk 
+        """    
+        reviews_path = os.path.join(dir_, f"reviews_{self.tag}.parquet")
+        items_path = os.path.join(dir_, f"items_{self.tag}.parquet")
+
+        print(f"Loading reviews... ")
+        reviews = pd.read_parquet(reviews_path) 
+            
+        print(f"Loading items... ")
+        items = pd.read_parquet(items_path)    
+        
+        print(f"Extracting users ... ")
+        users = self.find_users(reviews)
+
+        print(f"Memory usage:") 
+        print(f" - reviews ~{sys.getsizeof(reviews):,} bytes)")
+        print(f" - items ~{sys.getsizeof(items):,} bytes)")
+        print(f" - users ~{sys.getsizeof(users):,} bytes)")
+
+        print(f"Non-sparse user-item matrix will be {len(users) * len(items):,} elements!")
+
+        return users, reviews, items
+
+    def split(self, users, reviews, items):
+        """
+        Generate sparse matrices for training splits as follows: 
+        - self.train : training matrix
+        - self.val : matrix to predict on during validation 
+        - self.val_chk : matrix to check validation predictions on 
+        - self.test : matrix for test predictions
+        - self.test_chk : matrix to compare test predictions against
+
+        To access the matrx, call gen_affinity_matrix() on each of the above, which will 
+        densify (watch out for memory issues) and return the contiguous array of values. 
+        [0] is the first user in the list, with ratings for all items in that row
+
+        """
+        print(f"Full user-item matrix is {len(users) * len(items)}")
+
+        # NOTE: Strategy adapted from tutorials available in the Recommenders project, see 
+        # https://github.com/recommenders-team/recommenders/tree/main
+        # Split along user boundaries to ensure no leakage of preference between train and test
+        train_users, test_users, val_users = python_random_split(users, [.9, .05, .05])
+        print(train_users.shape, test_users.shape, val_users.shape)
+
+        train = reviews[reviews.user_id.isin(train_users.user_id)]
+        val = reviews[reviews.user_id.isin(val_users.user_id)]
+        test = reviews[reviews.user_id.isin(test_users.user_id)]
+        print(train.shape, val.shape, test.shape)
+
+        # Technique from Recommenders (see https://github.com/recommenders-team/recommenders/blob/45e1b215a35e69b92390e16eb818d4528d0a33a2/examples/02_model_collaborative_filtering/standard_vae_deep_dive.ipynb) 
+        # to improve utility of validation set during training - only allow items in
+        # the validation set that are also present in the train set
+        val = val[val.item_id.isin(train.item_id.unique())]
+        print(val.shape)
+
+        # Another technique employed in Recommenders (see above link for notebook), for in-flight validation to be 
+        # meaningful during training, our validation set needs not just ground truth, but unseen validation samples 
+        # to see if predictions for validation users are relevant (to those users). Anyway, break down our val and test 
+        # sets again to support this strategy
+        val_src, val_target = python_stratified_split(
+            data=val, 
+            ratio=0.8, 
+            filter_by="item", 
+            col_user="user_id", 
+            col_item="item_id"
+            )
+        test_src, test_target = python_stratified_split(
+            data=test, 
+            ratio=0.8, 
+            filter_by="item", 
+            col_user="user_id", 
+            col_item="item_id"
+            )
+        
+        print(val.shape, " -> ", val_src.shape, val_target.shape)
+        print(test.shape, " -> ", test_src.shape, test_target.shape)
+
+        header = {
+            "col_user": "user_id",
+            "col_item": "item_id",
+            "col_rating": "rating",
+        }
+
+        self.train = AffinityMatrix(df=train, **header)
+        self.val = AffinityMatrix(df=val_src, **header)
+        self.val_chk = AffinityMatrix(df=val_target, **header)
+        self.test = AffinityMatrix(df=test_src, **header)
+        self.test_chk = AffinityMatrix(df=test_target, **header)
+
+        sparsity = np.count_nonzero(train)/(train.shape[0]*train.shape[1])*100
+        print(f"sparsity: {sparsity:.2f}%")
+
+class DeepCartTorchDataset(torch.utils.data.Dataset):
+
+    @classmethod
+    def get_data_loader(cls, batch_size=5, shuffle=True): 
+        """
+        Retrieve a pytorch-style dataloader that loads data via instances of 
+        this class
+        """
+
+        # TODO: scale data to [0, 1] ?  we'll have to do this on prediction as well... 
+        # perhaps elsewhere? 
+        transform = torch.transforms.Scale(mean=[0.5], std=[0.5])
+
+        data = DeepCartTorchDataset(transform=transform)
+        loader = torch.utils.data.DataLoader(data, batch_size=batch_size, shuffle=shuffle)
+        
+        #return loader
+        pass
+
+    def __len__(self): 
+        """
+        Retrieve length of the dataset
+        """
+        return len(self.img_labels) 
     
-    print(f"Extracting users ... ")
-    users = extract_users(reviews)
-
-    print(f"Memory usage:") 
-    print(f" - reviews ~{sys.getsizeof(reviews):,} bytes)")
-    print(f" - items ~{sys.getsizeof(items):,} bytes)")
-    print(f" - users ~{sys.getsizeof(users):,} bytes)")
-
-    print(f"Non-sparse user-item matrix will be {len(users) * len(items):,} elements!")
-
-    return users, reviews, items
+    def __getitem__(self, idx): 
+        """
+        Retrieve an item at the provided index
+        """
+        #TODO: implement
+        pass

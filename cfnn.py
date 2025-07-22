@@ -6,7 +6,6 @@ import numpy as np
 import pandas as pd
 from sklearn.base import BaseEstimator 
 from sklearn.metrics.pairwise import cosine_similarity
-from recommenders.datasets.sparse import AffinityMatrix
 from similarity import pearson_similarity
 import dataset 
 
@@ -24,24 +23,16 @@ class CfnnEstimator(BaseEstimator):
         self.i_map = None
         self.model = None
 
-    def fit(self, reviews, top_k, similarity='pearson'): 
+    def fit(self, ui, ui_val, ui_val_check, top_k, similarity='pearson'): 
         """
-        Fit our estimator providing a list of user reviews and the top correlated users to 
-        retain in the model for recommendations. 
+        Fit our estimator given a user-item matrix and validation matrices
         """ 
-        header = {
-            "col_user": "user_id",
-            "col_item": "item_id",
-            "col_rating": "rating",
-        }
-
-        ui_sparse = AffinityMatrix(reviews, **header)    
 
         # This isn't implied by the name, but this densifies the matrix, i.e. we have a contiguous u x i
         # matrix here (user vector of item ratings) ... though it's actually not clear how the memory is 
         # managed underneath in scipy, the 'dense' array might just be a bunch of pointers to the DFs stored 
         # in the AffMat object... 
-        ui_dense, u_map, i_map = ui_sparse.gen_affinity_matrix()
+        ui_dense, u_map, i_map = ui.gen_affinity_matrix()
         
         # Populating a full user similarity matrix is inherently limited by (and is a questionable 
         # strategy because of) the u^2 memory requirement. Unlike our affinity matrices, 
