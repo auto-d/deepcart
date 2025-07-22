@@ -5,6 +5,7 @@ import numpy as np
 from recommenders.datasets.sparse import AffinityMatrix
 from recommenders.datasets.python_splitters import python_random_split
 from recommenders.datasets.python_splitters import python_stratified_split 
+from tqdm import tqdm 
 import torch 
 
 class DeepCartDataset(): 
@@ -116,11 +117,9 @@ class DeepCartDataset():
         print(f" - items ~{sys.getsizeof(items):,} bytes)")
         print(f" - users ~{sys.getsizeof(users):,} bytes)")
 
-        print(f"Non-sparse user-item matrix will be {len(users) * len(items):,} elements!")
-
         self.reviews = reviews
         self.items = items 
-        self.user = users         
+        self.users = users         
 
     def split(self):
         """
@@ -136,24 +135,22 @@ class DeepCartDataset():
         [0] is the first user in the list, with ratings for all items in that row
 
         """
-        print(f"Full user-item matrix is {len(self.users) * len(self.items)}")
+        tqdm.write(f"Full user-item matrix is {len(self.users) * len(self.items)}")
 
         # NOTE: Strategy adapted from tutorials available in the Recommenders project, see 
         # https://github.com/recommenders-team/recommenders/tree/main
         # Split along user boundaries to ensure no leakage of preference between train and test
-        train_users, test_users, val_users = python_random_split(self.users, [.9, .05, .05])
-        print(train_users.shape, test_users.shape, val_users.shape)
+        train_users, test_users, val_users = python_random_split(self.users, [.8, .1, .1])
 
         train = self.reviews[self.reviews.user_id.isin(train_users.user_id)]
         val = self.reviews[self.reviews.user_id.isin(val_users.user_id)]
         test = self.reviews[self.reviews.user_id.isin(test_users.user_id)]
-        print(train.shape, val.shape, test.shape)
 
         # Technique from Recommenders (see https://github.com/recommenders-team/recommenders/blob/45e1b215a35e69b92390e16eb818d4528d0a33a2/examples/02_model_collaborative_filtering/standard_vae_deep_dive.ipynb) 
         # to improve utility of validation set during training - only allow items in
         # the validation set that are also present in the train set
+        tqdm.write("Dropping items from validation set that are not present in train set...")
         val = val[val.item_id.isin(train.item_id.unique())]
-        print(val.shape)
 
         # Another technique employed in Recommenders (see above link for notebook), for in-flight validation to be 
         # meaningful during training, our validation set needs not just ground truth, but unseen validation samples 
@@ -172,10 +169,17 @@ class DeepCartDataset():
             filter_by="item", 
             col_user="user_id", 
             col_item="item_id"
+            )        
+                
+        tqdm.write(f"User splits:\n"\
+            f" train : {len(train_users)} users @ {len(train)} ratings\n"\
+            f" val   : {len(val_users)} users @ {len(val)} ratings\n"\
+            f"  - input : {len(val_src)} ratings\n"\
+            f"  - check : {len(val_target)} ratings\n"\
+            f" test  :{len(test_users)} users @ {len(test)} ratings\n"\
+            f"  - input :{len(test_src)} ratings\n"\
+            f"  - check :{len(test_target)} ratings\n"\
             )
-        
-        print(val.shape, " -> ", val_src.shape, val_target.shape)
-        print(test.shape, " -> ", test_src.shape, test_target.shape)
 
         header = {
             "col_user": "user_id",
@@ -189,9 +193,6 @@ class DeepCartDataset():
         self.val_chk = AffinityMatrix(df=val_target, **header)
         self.test = AffinityMatrix(df=test_src, **header)
         self.test_chk = AffinityMatrix(df=test_target, **header)
-
-        sparsity = np.count_nonzero(train)/(train.shape[0]*train.shape[1])*100
-        print(f"sparsity: {sparsity:.2f}%")
 
 class DeepCartTorchDataset(torch.utils.data.Dataset):
     """

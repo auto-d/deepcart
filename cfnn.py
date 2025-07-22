@@ -23,7 +23,7 @@ class CfnnEstimator(BaseEstimator):
         self.i_map = None
         self.matrix = None
 
-    def compare_users(self, ui_a, a_ix, ui_b, b_ix, similarity):
+    def compare_users(self, ui_a, a_ix, ui_b, b_ix, metric):
         """
         Report a similarity score given the user-item matrices and associated indices for two users
         """
@@ -44,14 +44,14 @@ class CfnnEstimator(BaseEstimator):
         # Cosine similarity risks insensitivity to rating value, while imperfect here, 
         # Pearson similarity gets us sensitivty to rating magnitude and trends
         sim = None
-        if similarity=='pearson': 
+        if metric=='pearson': 
             sim = similarity.pearson_similarity(a_items, b_items)
         else: 
             sim = cosine_similarity([a_items], [b_items])[0][0]
 
         return sim 
     
-    def fit(self, train, val, val_chk, k=10, similarity='pearson'): 
+    def fit(self, train, val, val_chk, k=10, metric='pearson'): 
         """
         Fit our estimator given a user-item matrix and validation matrices, only 
         holding k of the most similar users to ease up the memory impact. 
@@ -78,7 +78,7 @@ class CfnnEstimator(BaseEstimator):
             sim_a = {}
             for b in range(len(u_map)): 
                 if a != b:                     
-                    sim_a[b] = self.compare_users(ui, a, ui, b)
+                    sim_a[b] = self.compare_users(ui, a, ui, b, metric=metric)
 
             # Find and store the top k user matches, in order    
             # NOTE: dict sorting logic courtesy of gpt-4o (https://chatgpt.com/share/687dc72f-54b4-8013-806e-b1de20d0ef12)

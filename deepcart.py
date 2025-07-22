@@ -8,7 +8,6 @@ import cfnn
 import naive
 import tempfile
 import glob
-import asyncio 
 from dataset import DeepCartDataset, DeepCartTorchDataset
 from process import run_subprocess
 
@@ -127,15 +126,17 @@ def build_parser():
     train_parser = subparsers.add_parser("train") 
     train_parser.add_argument("--data-dir", type=readable_dir, help="Directory to look for tagged dataset", default="data/processed", required=False)
     train_parser.add_argument("--data-tag", type=str, help="Dataset tag to look for (set during creation)", required=True)
-    train_parser.add_argument("--model-dir", help="Directory to write resulting model to", required=False, default="models")
+    train_parser.add_argument("--model-dir", help="Directory to write resulting model to", default="models")
     train_parser.add_argument("--nn_epochs", type=int, default=1)
     train_parser.add_argument("--nn_batch", type=int, default=10)
     train_parser.add_argument("--type", choices=['naive', 'classic', 'neural'], default='neural')
 
     # Test mode 
     test_parser = subparsers.add_parser("test") 
-    test_parser.add_argument("--model_dir", type=readable_dir, help="Directory to load model from")
+    test_parser.add_argument("--model_dir", type=readable_dir, help="Directory to load model from", default="models")
+    test_parser.add_argument("--data-dir", type=readable_dir, help="Directory to look for tagged dataset", default="data/processed", required=False)    
     test_parser.add_argument("--data-tag", type=str, help="Dataset tag to look for (set during creation)", required=True)
+    test_parser.add_argument("--top-k", type=int, help="Number of recommendations to evaluate", default=10)
     test_parser.add_argument("--type", choices=['naive', 'classic', 'neural'], default='neural')
 
     # Deploy mode 
@@ -176,7 +177,7 @@ def router():
 
             match(args.type): 
                 case 'naive':
-                    model = naive.train(dataset, dataset.val, dataset.val_chk)
+                    model = naive.train(dataset.train, dataset.val, dataset.val_chk)
                     naive.save_model(model, args.model_dir)
                 case 'classic':
                     model = cfnn.train(dataset.train, dataset.val, dataset.val_chk) 
@@ -188,11 +189,12 @@ def router():
 
         case  "test":
             dataset = DeepCartDataset(args.data_tag)
-
+            dataset.load(args.data_dir)
+            dataset.split() 
             match (args.type): 
                 case 'naive':
                     model = naive.load_model(args.model_dir)
-                    naive.test(model, dataset.test, dataset.test_chk)
+                    naive.test(model, dataset.test, dataset.test_chk, top_k=args.top_k)
                 case 'classic':
                     model = cfnn.load_model(args.model_dir)
                     cfnn.test(model, dataset.test, dataset.test_chk) 

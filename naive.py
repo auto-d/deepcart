@@ -26,20 +26,21 @@ class NaiveEstimator(BaseEstimator):
         """ 
         ui, u_map, i_map = train.gen_affinity_matrix() 
 
+        tqdm.write(f"Fitting model to review data... ")
         # Assemble a list of the mean ratings for reviewed items
         item_ratings = [0] * len(i_map)
-        for i in tqdm(i_map): 
+        for i in tqdm(i_map.values()): 
             
             ratings = []
-            for u in range(len(u_map)): 
+            for u in u_map.values(): 
                 if ui[u][i] != 0: 
-                    ratings.append(ui[u][i])
+                    ratings.append(min(ui[u][i], 5))
             
             item_ratings[i] = np.mean(ratings)
         
         self.item_ratings = item_ratings
-        self.u_map = u_map
-        self.i_map = i_map 
+        self.model_u_map = u_map
+        self.model_i_map = i_map 
          
         return self
         
@@ -51,14 +52,20 @@ class NaiveEstimator(BaseEstimator):
                 
         tqdm.write(f"Running predictions... ")
         
-        ui, u_map, i_map = ui.gen_affinity_matrix() 
-        if len(self.i_map) != len(i_map): 
-            raise ValueError("Item vector length mismatch, can't predict!")
+        # Map this (probably smaller and potentially disjoint) item vector into 
+        # our training baseline
 
-        # For each requested prediction (user), find the best-reviewed items that this 
-        # user hasn't already reviewed... 
+        ui, u_map, i_map = ui.gen_affinity_matrix() 
+        
+        # For each requested user, find the best-reviewed items that they have't
+        # already reviewed... 
         for u in tqdm(range(len(u_map))): 
-            rated = list(np.nonzero(ui[u])[0]) 
+            
+            # This new dataset is unlikely to share the same item space as our 
+            # training set. Map the item indices to corresponding indices in our 
+            # item baseline. 
+            new_rated = list(np.nonzero(ui[u])[0]) 
+            rated = similarity.map_keys(i_map, new_rated, self.model_i_map)
             recommended = []
             
             while len(recommended) < k: 
@@ -68,16 +75,16 @@ class NaiveEstimator(BaseEstimator):
                 # Recommendations need to be in a format suitable for scoring w/ the 
                 # Recommenders MAP@K. I.e. dataframe with cols user, item & rating             
                 row = [
-                    similarity.find_key(self.u_map, u), 
-                    similarity.find_key(self.i_map, best_rated), 
+                    similarity.find_key(u_map, u), 
+                    similarity.find_key(self.model_i_map, best_rated), 
                     self.item_ratings[best_rated]
                     ]
                 recommendations.append(row)
         
-        df = pd.DataFrame(recommendations, columns=['user_id', 'item_id', 'rating']) 
+        df = pd.DataFrame(recommendations, columns=['user_id', 'item_id', 'prediction']) 
         return df 
     
-    def score(self, top_ks, test, test_chk, k=10):
+    def score(self, top_ks, test_chk, k=10):
         """
         Employ the recommenders library to calculate MAP@K here. 
         NOTE: Recommenders examples used to source call semantics, see e.g.
@@ -86,11 +93,13 @@ class NaiveEstimator(BaseEstimator):
 
         tqdm.write(f"Scoring recommendations... ")
 
-        recs_df = test.map_back_sparse(top_ks, kind='prediction')
-        test_df = test.map_back_sparse(test_chk, kind='ratings')
-
-        map = map_at_k(test_df, recs_df, col_prediction='prediction', k=k)
-        
+        map = map_at_k(
+            test_chk.df, 
+            top_ks, 
+            col_item="item_id", 
+            col_user="user_id", 
+            col_prediction='prediction', 
+            k=k)
         tqdm.write(f"MAP@K (k={k}): {map}")
 
         return map
@@ -125,16 +134,16 @@ def load_model(path):
 
     return model
 
-def train(train): 
+def train(train, val, val_chk): 
     """
     'Train' the naive model 
     """
-    return NaiveEstimator().fit(train)
+    return NaiveEstimator().fit(train, val, val_chk)
 
-def test(model, test, test_chk):
+def test(model, test, test_chk, top_k):
     """
     Test the naive model 
     """
-    top_ks = model.recommend(test)
-    scores = model.score(top_ks, test, test_chk)
+    top_ks = model.recommend(test, top_k)
+    scores = model.score(top_ks, test_chk)
     tqdm.write(f"Naive mean scores for the provided dataset: {np.mean(scores)}")
