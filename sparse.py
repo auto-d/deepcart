@@ -8,18 +8,7 @@ import itertools
 from scipy.sparse import coo_matrix
 import logging
 
-# import default parameters
-from recommenders.utils.constants import (
-    DEFAULT_USER_COL,
-    DEFAULT_ITEM_COL,
-    DEFAULT_RATING_COL,
-    DEFAULT_PREDICTION_COL,
-)
-
-
 log = logging.getLogger(__name__)
-
-
 class AffinityMatrix:
     """Generate the user/item affinity matrix from a pandas dataframe and vice versa"""
 
@@ -27,10 +16,10 @@ class AffinityMatrix:
         self,
         df,
         items_list=None,
-        col_user=DEFAULT_USER_COL,
-        col_item=DEFAULT_ITEM_COL,
-        col_rating=DEFAULT_RATING_COL,
-        col_pred=DEFAULT_PREDICTION_COL,
+        col_user="user_id",
+        col_item="item_id",
+        col_rating="rating",
+        col_pred="prediction",
         save_path=None,
     ):
         """Initialize class parameters
