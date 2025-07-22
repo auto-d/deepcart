@@ -128,7 +128,8 @@ def build_parser():
     train_parser.add_argument("--data-dir", type=readable_dir, help="Directory to look for tagged dataset", default="data/processed", required=False)
     train_parser.add_argument("--data-tag", type=str, help="Dataset tag to look for (set during creation)", required=True)
     train_parser.add_argument("--model-dir", help="Directory to write resulting model to", required=False, default="models")
-    train_parser.add_argument("--nn_epochs", type=int, default=3)
+    train_parser.add_argument("--nn_epochs", type=int, default=1)
+    train_parser.add_argument("--nn_batch", type=int, default=10)
     train_parser.add_argument("--type", choices=['naive', 'classic', 'neural'], default='neural')
 
     # Test mode 
@@ -175,14 +176,14 @@ def router():
 
             match(args.type): 
                 case 'naive':
-                    model = naive.train(dataset)
+                    model = naive.train(dataset, dataset.val, dataset.val_chk)
                     naive.save_model(model, args.model_dir)
                 case 'classic':
                     model = cfnn.train(dataset.train, dataset.val, dataset.val_chk) 
                     cfnn.save_model(model, args.model_dir)
                 case 'neural': 
-                    loader = DeepCartTorchDataset(dataset.train).get_data_loader()
-                    model = autoencoder.train(loader, args.nn_epochs)                    
+                    torch_dataset = DeepCartTorchDataset(matrix=dataset.train, batch_size=args.nn_batch)
+                    model = autoencoder.train(torch_dataset, args.nn_epochs, dataset.val, dataset.val_chk)
                     autoencoder.save_model(model, args.model_dir)
 
         case  "test":
@@ -197,8 +198,8 @@ def router():
                     cfnn.test(model, dataset.test, dataset.test_chk) 
                 case 'neural': 
                     model = autoencoder.load_model(args.model_dir)
-                    loader = DeepCartTorchDataset(dataset.test).get_data_loader()                     
-                    autoencoder.test(model, loader, dataset.test_chk)
+                    torch_dataset = DeepCartTorchDataset(dataset.test)
+                    autoencoder.test(model, torch_dataset, dataset.test_chk)
 
         case "deploy":
             if token: 

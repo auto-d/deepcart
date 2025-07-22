@@ -196,12 +196,12 @@ def load_model(path):
 
     return model
 
-def train(train, top_k=5): 
+def train(train, val, val_chk): 
     """
     Train the model     
     """
     model = CfnnEstimator() 
-    model.fit(train, top_k)
+    model.fit(train, val, val_chk)
     return model     
 
 def test(model, test, test_chk):

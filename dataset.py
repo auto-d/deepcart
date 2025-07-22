@@ -186,11 +186,16 @@ class DeepCartDataset():
         print(f"sparsity: {sparsity:.2f}%")
 
 class DeepCartTorchDataset(torch.utils.data.Dataset):
+    """
+    Torch-compatible dataset to capitalize on the former's abstraction of batching, 
+    parallelism and shuffling memory to GPU & back
+    """
 
-    def __init__(self, matrix:AffinityMatrix): 
+    def __init__(self, matrix:AffinityMatrix, batch_size=10): 
         """
         Initialize a new instance given a sparse matrix of reviews
         """
+        self.batch_size = batch_size
         self.ui, self.u_map, self.i_map = matrix.gen_affinity_matrix()
         
         # Scale reviews to [0,1] for our network 
@@ -208,10 +213,16 @@ class DeepCartTorchDataset(torch.utils.data.Dataset):
         """
         return self.ui[idx]
 
-    def get_data_loader(self, batch_size=5, shuffle=True): 
+    def get_mappings(self): 
+        """
+        Retrieve the user and item mappings to enable decoding of the user-item 
+        affinity matrix 
+        """
+        return self.u_map, self.i_map 
+    
+    def get_data_loader(self, shuffle=True): 
         """
         Retrieve a pytorch-style dataloader that loads data with this instance
         """
-        loader = torch.utils.data.DataLoader(self, batch_size=batch_size, shuffle=shuffle)
-        
+        loader = torch.utils.data.DataLoader(self, batch_size=self.batch_size, shuffle=shuffle)        
         return loader
