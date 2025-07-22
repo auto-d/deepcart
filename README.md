@@ -67,7 +67,12 @@ Wrote 'small' dataset to data/processed.
 Generation complete!
 ```
 
-  
+**Train Models** 
+
+**Evaluate Models** 
+
+**Deploy a Demo** 
+
 ## Demo Application
 
 ## Results and Conclusions

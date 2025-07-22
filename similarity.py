@@ -38,7 +38,7 @@ def find_key(dict_, val):
         if v == val: 
             return k
     
-def argmax_(list_, exclude): 
+def argmax(list_, exclude): 
     """
     Argmax with a list of indices to include, and exclude
     """    

@@ -38,6 +38,8 @@ class NaiveEstimator(BaseEstimator):
             item_ratings[i] = np.mean(ratings)
         
         self.item_ratings = item_ratings
+        self.u_map = u_map
+        self.i_map = i_map 
          
         return self
         
@@ -48,7 +50,10 @@ class NaiveEstimator(BaseEstimator):
         recommendations = []
                 
         tqdm.write(f"Running predictions... ")
+        
         ui, u_map, i_map = ui.gen_affinity_matrix() 
+        if len(self.i_map) != len(i_map): 
+            raise ValueError("Item vector length mismatch, can't predict!")
 
         # For each requested prediction (user), find the best-reviewed items that this 
         # user hasn't already reviewed... 
@@ -57,14 +62,14 @@ class NaiveEstimator(BaseEstimator):
             recommended = []
             
             while len(recommended) < k: 
-                best_rated = similarity.argmax_(self.item_ratings, exclude=rated + recommended)
+                best_rated = similarity.argmax(self.item_ratings, exclude=rated + recommended)
                 recommended.append(best_rated) 
                 
                 # Recommendations need to be in a format suitable for scoring w/ the 
                 # Recommenders MAP@K. I.e. dataframe with cols user, item & rating             
                 row = [
-                    similarity.find_key(u_map, u), 
-                    similarity.find_key(i_map, best_rated), 
+                    similarity.find_key(self.u_map, u), 
+                    similarity.find_key(self.i_map, best_rated), 
                     self.item_ratings[best_rated]
                     ]
                 recommendations.append(row)
