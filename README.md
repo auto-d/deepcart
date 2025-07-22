@@ -4,14 +4,11 @@ DeepCart is a tool to sift through Amazon electronics purchase historicals and s
 
 ## TODO 
 
-- EDA 
-- decide on neural network approach 
-- model and evaluate NN 
-- decide on non-neural approach 
-- model and evalute non-NN 
-- pick a naive approach (random) 
-- evaluate naive approach 
-- build a web app 
+- be clear on how this will be presented
+- implement autoencoder from scratch 
+- implment naive approach that picks the most popular item
+- set up evaluation for all models
+- build a web app to demo
 - write the readme 
 - record a video
 

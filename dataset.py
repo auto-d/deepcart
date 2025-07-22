@@ -38,9 +38,14 @@ def build(items_path, reviews_path, tag, output_dir, min_interactions, min_ratin
     reviews.rename(columns={'parent_asin':'item_id'}, inplace=True)
     items.rename(columns={'parent_asin':'item_id'}, inplace=True)
 
+    # Products with few interactions are a weak signal -- we are looking to
+    # connect users and items that have tiny interaction graphs are not going to improve
+    # our macro-level predictions, but it will cost us in memory and compute
     items_small = items[items.rating_number > min_ratings]
     print(f"Dropped {len(items)-len(items_small):,} items (<{min_ratings} ratings)")
 
+    # Users with few interactions are also a weak signal -- without associations with 
+    # multiple products, we are not teaching the model about positive associations
     users_small = users[users.ratings >= min_interactions]
     print(f"Dropped {len(users)-len(users_small):,} users (reviews <{min_interactions})")
 

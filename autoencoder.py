@@ -8,15 +8,14 @@ from recommenders.datasets.python_splitters import python_random_split, python_s
 from recommenders.utils.python_utils import binarize
 from recommenders.models.vae.standard_vae import StandardVAE
 
-def train(users, reviews, items, epochs=2, batch=10):
+def train(users, reviews, epochs=2, batch=10):
     """
     Train the model with the provided dataset
 
     NOTE: this is a similar training loop as we used for our vision model in the 
     the vision project, forward pass
     """
-    tqdm.write(f"Starting training run...")    
-    print(f"Full user-item matrix is {len(users) * len(items)}")
+    tqdm.write(f"Starting training run...")        
 
     # We are trying to teach the model what a good interaction is like, and we'll 
     # ultimately be interested only in whether to recommend an item or not ... 
@@ -151,7 +150,7 @@ def save_model(model, path):
     Save the model to a file
     NOTE: borrowed from vision project
     """
-    filename = os.path.join(path, "ae.pt")
+    filename = os.path.join(path, "ae.xyz")
     
     #TODO: implement
 
@@ -176,7 +175,7 @@ def summarize_history(history):
     Mine some salient history 
     """
     #TODO: update or discard 
-    
+
     df = pd.DataFrame(history) 
     s = (f"***************************\n")
     s += f"Completed {df.epoch.max():.4} epochs ({df.step.max()} steps)\n"
