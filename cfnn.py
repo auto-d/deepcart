@@ -21,9 +21,9 @@ class CfnnEstimator(BaseEstimator):
         """
         self.u_map = None
         self.i_map = None
-        self.model = None
+        self.matrix = None
 
-    def fit(self, ui, ui_val, ui_val_check, top_k, similarity='pearson'): 
+    def fit(self, train, val, val_chk, top_k, similarity='pearson'): 
         """
         Fit our estimator given a user-item matrix and validation matrices
         """ 
@@ -32,13 +32,17 @@ class CfnnEstimator(BaseEstimator):
         # matrix here (user vector of item ratings) ... though it's actually not clear how the memory is 
         # managed underneath in scipy, the 'dense' array might just be a bunch of pointers to the DFs stored 
         # in the AffMat object... 
-        ui_dense, u_map, i_map = ui.gen_affinity_matrix()
+        ui, u_map, i_map = train.gen_affinity_matrix()
         
         # Populating a full user similarity matrix is inherently limited by (and is a questionable 
         # strategy because of) the u^2 memory requirement. Unlike our affinity matrices, 
         # these are not sparse. Since our goal is recommending items, we'll compute the similarity
         # iterativealy and store the most similar users to get down to C * u memory pattern
         similarity_matrix = np.array([[0.] * top_k] * len(u_map))
+
+        # ❗TODO: be careful here, validate that our array multiplication above created distinct arrays 
+        # and not copies of the same array which 
+
         for a in tqdm(range(len(u_map))): 
 
             # Collect our similarities w/ respect to user A
@@ -49,11 +53,11 @@ class CfnnEstimator(BaseEstimator):
                     # Given the sparsity of our review vectors, cosine similarity is going to be 
                     # effectively zero if we look across the entire item space... compare only those 
                     # items these two users have in common (at least 1 rating between the two).
-                    a_item_ix = np.nonzero(ui_dense[a])[0]            
-                    b_item_ix = np.nonzero(ui_dense[b])[0]
+                    a_item_ix = np.nonzero(ui[a])[0]            
+                    b_item_ix = np.nonzero(ui[b])[0]
                     all_ix = np.concatenate([a_item_ix, b_item_ix])
-                    a_items = ui_dense[a][all_ix]            
-                    b_items = ui_dense[b][all_ix]
+                    a_items = ui[a][all_ix]            
+                    b_items = ui[b][all_ix]
 
                     # Fill non-ratings with middling scores. Non-interactions appear 
                     # dissimilar to positive reviews and similar to negative ones otherwise.
@@ -74,7 +78,7 @@ class CfnnEstimator(BaseEstimator):
 
         self.u_map = u_map 
         self.i_map = i_map 
-        self.model = similarity_matrix
+        self.matrix = similarity_matrix
         return self
 
     def predict(self, X) -> np.ndarray: 
@@ -104,14 +108,6 @@ class CfnnEstimator(BaseEstimator):
             pass
 
         return scores
-
-def load_dataset(file): 
-    """
-    Load and return a compatible dataset for the naive classifier
-    """
-    df = pd.read_parquet(file)
-    
-    #TODO: implement
 
 def save_model(model, path):
     """
