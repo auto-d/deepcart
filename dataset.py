@@ -12,7 +12,7 @@ class DeepCartDataset():
     Abstraction for the review-driven dataset that supports our recommenders. 
     """
     
-    def __init__(*self, tag): 
+    def __init__(self, tag): 
         """
         Set up the instance, deferring creation/load given the memory-intensive nature
         """
@@ -52,22 +52,30 @@ class DeepCartDataset():
         # Products with few interactions are a weak signal -- we are looking to
         # connect users and items that have tiny interaction graphs are not going to improve
         # our macro-level predictions, but it will cost us in memory and compute
-        items_small = items[items.rating_number > min_ratings]
-        print(f"Dropped {len(items)-len(items_small):,} items (<{min_ratings} ratings)")
+        popular_items = items[items.rating_number > min_ratings]        
+        print(f"Dropped {len(items)-len(popular_items):,} unpopular items (<{min_ratings} ratings)")
+        reviews_small = reviews[reviews.item_id.isin(popular_items.item_id.unique())]
+        print(f"Dropped {len(reviews)-len(reviews_small):,} reviews (of unpopular items)")
+        
+        # Update our review counts to reflect only popular items
+        users = self.find_users(reviews_small)
 
         # Users with few interactions are also a weak signal -- without associations with 
-        # multiple products, we are not teaching the model about positive associations
-        users_small = users[users.ratings >= min_interactions]
-        print(f"Dropped {len(users)-len(users_small):,} users (reviews <{min_interactions})")
+        # multiple products, we are not teaching the model about positive associations                
+        active_users = users[users.ratings >= min_interactions]
+        print(f"Dropped {len(users)-len(active_users):,} low-activity users (reviews <{min_interactions})")
+        reviews_smaller = reviews_small[reviews_small.user_id.isin(active_users.user_id.unique())]
+        print(f"Dropped {len(reviews)-len(reviews_small):,} reviews (of low-activity users)")
 
-        reviews_small = reviews[reviews.user_id.isin(users_small.user_id.unique())]
+        # Update our review counts to only reflect active users and sample
+        users = self.find_users(reviews_smaller)        
+        sampled_users = users.sample(sample_n)
+        self.reviews = reviews_smaller[reviews_smaller.user_id.isin(sampled_users.user_id)]
+        print(f"Dropped {len(reviews_smaller)-len(self.reviews):,} reviews (user not part of sample)")
 
-        sampled_users = users_small.sample(sample_n)
-        self.reviews = reviews_small[reviews_small.user_id.isin(sampled_users.user_id)]
-        print(f"Dropped {len(reviews_small)-len(self.reviews):,} reviews (no user associated)")
-
-        self.items = items_small[items_small.item_id.isin(self.reviews.item_id.unique())]    
-        print(f"Dropped {len(items_small)-len(self.items):,} items (no review associated)")
+        # Finally clean all items that no longer have represntation in the reviews
+        self.items = popular_items[popular_items.item_id.isin(self.reviews.item_id.unique())]    
+        print(f"Dropped {len(popular_items)-len(self.items):,} items (no review associated)")
         
         print(f"Generation complete!")
 
