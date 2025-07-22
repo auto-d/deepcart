@@ -173,6 +173,7 @@ class DeepCartDataset():
             "col_user": "user_id",
             "col_item": "item_id",
             "col_rating": "rating",
+            "col_pred" : "recs"
         }
 
         self.train = AffinityMatrix(df=train, **header)
