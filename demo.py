@@ -126,7 +126,7 @@ def on_click(evt: gr.SelectData):
     selected = evt.index
     product = products[selected]   
     
-    rating = int(product['rating']) 
+    rating = int(np.floor(product['rating']))
     rating = max(1, rating)
     rating = min(rating, 5)
     star_rating = stars[rating-1]
@@ -198,7 +198,7 @@ def demo(share=False, data_tag="small"):
         gr.Markdown(value="Below you'll find the very best AI recommendations to enhance your product browsing experience! Select a product to view information and rate it to see updated recommendations!")
 
         with gr.Row():             
-            gr.Markdown(value="*If you'd like to see more recommendations, adjust accordingly with the slider to the right.*")            
+            gr.Markdown(value="*If you'd like to see more recommendations, adjust accordingly with the slider to the right.*\n\n**Note:** Our low-quality items often have fragmented listings (which could be part of why they are so terrible!). When we encounter these we filter from the listing. *Actual recommendation counts may not match recommendation slider accordingly!* ☺️")            
             topk_slider = gr.Slider(label="Recommendations to generate", value=10, maximum=100, step=5)
         
         initialize()         

@@ -18,20 +18,6 @@ def deploy(share=False, data_tag="test"):
     """
     demo(share, data_tag)
 
-def load_secrets(): 
-    """
-    Find our secrets and return them
-    NOTE: reused from NLP project
-    """
-            
-    # TODO: update or discard 
-    # hf_token = os.environ.get("HF_TOKEN")
-    # if not hf_token: 
-    #     with open("secrets/huggingface.token", "r") as file: 
-    #         hf_token = file.read()
-    
-    return None
-
 def readable_file(path):
     """
     Test for a readable file
@@ -110,7 +96,7 @@ def build_parser():
     # Deploy mode 
     deploy_parser = subparsers.add_parser("deploy")
     deploy_parser.add_argument("--data-tag", type=str, help="Data tag associated with the ref data")
-    deploy_parser.add_argument("--share", type=bool, default=False, help="Whether or not to deploy to gradio hosting")
+    deploy_parser.add_argument("--share", action='store_true', default=False, help="Whether or not to deploy to gradio hosting")
     
     return parser
     
@@ -124,7 +110,6 @@ def router():
 
     parser = build_parser() 
     args = parser.parse_args()    
-    token = load_secrets()
     
     match(args.mode):
         case "build":

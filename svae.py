@@ -8,6 +8,9 @@ from recommenders.datasets.python_splitters import python_random_split, python_s
 from recommenders.utils.python_utils import binarize
 from recommenders.models.vae.standard_vae import StandardVAE
 
+# NOTE: This implementation is no longer employed due to some incredibly heinous dependency issues -- Recommenders implementations are 
+# extremely dated at this point and create headaches for retreating to compatible permutations of python, keras, tensorflow, numpy and scipy. 
+
 def train(users, reviews, epochs=2, batch=10):
     """
     Train the model with the provided dataset

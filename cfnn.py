@@ -11,7 +11,7 @@ import similarity
 
 class CfnnEstimator(BaseEstimator):
     """
-    A basic collaborative filtering implementation that employs rating 
+    A basic nearest-neighbor collaborative filter implementation that employs rating 
     distribution similarity measures to produce item recommendations. 
     """ 
     
@@ -68,9 +68,6 @@ class CfnnEstimator(BaseEstimator):
         # these are not sparse. Since our goal is recommending items, we'll compute the similarity
         # iteratively and store just the top similar users to get down to C * u memory pattern
         similarity_matrix = np.array([[0] * k] * len(u_map))
-
-        # ❗TODO: be careful here, validate that our array multiplication above created distinct arrays 
-        # and not copies of the same array which 
 
         for a in tqdm(range(len(u_map))): 
 
