@@ -133,7 +133,7 @@ class DeepCartDataset():
         To access the matrx, call gen_affinity_matrix() on each of the above, which will 
         densify (watch out for memory issues) and return the contiguous array of values. 
         [0] is the first user in the list, with ratings for all items in that row
-
+F
         """
         tqdm.write(f"Full user-item matrix is {len(self.users) * len(self.items)}")
 

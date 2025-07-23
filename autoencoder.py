@@ -18,22 +18,26 @@ class Autoencoder(nn.Module):
     NOTE: with cues from https://www.geeksforgeeks.org/deep-learning/implementing-an-autoencoder-in-pytorch/
     """
 
-    def __init__(self, dims):
+    def __init__(self, dims, l1, l2):
         """
         Initialize a new object given an item count 
         """
+        self.dims = dims
+        self.l1 = l1
+        self.l2 = l2 
+
         super().__init__()
 
         self.encoder = nn.Sequential(
-            nn.Linear(dims, 100),
+            nn.Linear(dims, l1),
             nn.ReLU(), 
-            nn.Linear(100, 20),
+            nn.Linear(l1, l2),
             nn.ReLU(), 
         )
         self.decoder = nn.Sequential(
-            nn.Linear(20, 100),
+            nn.Linear(l2, l1),
             nn.ReLU(), 
-            nn.Linear(100, dims),
+            nn.Linear(l1, dims),
             nn.ReLU(), 
             nn.Sigmoid()
         )
@@ -49,14 +53,16 @@ class Autoencoder(nn.Module):
 
 class AutoencoderEstimator(): 
 
-    def __init__(self, tensorboard_dir="./runs"): 
+    def __init__(self, tensorboard_dir="./runs", l1 = 250, l2 = 50): 
         """
         Initialize an object 
         """
         self.module = None
         self.tensorboard_dir = tensorboard_dir
+        self.l1 = l1
+        self.l2 = l2 
 
-    def train(self, dataset, val, val_chk, epochs=2, lr=0.0005, loss_interval=2):
+    def train(self, dataset, val, val_chk, epochs=2, lr=0.0005, loss_interval=10):
         """
         Train the model with the provided user-item dataset, optionally furnishing a learning 
         rate and interval to plot loss values
@@ -66,10 +72,12 @@ class AutoencoderEstimator():
         train_loss = []
 
         u_map, i_map = dataset.get_mappings()
-        model = Autoencoder(len(i_map))  
+        model = Autoencoder(dims=len(i_map), l1=self.l1, l2=self.l2)  
+        loader = dataset.get_data_loader()
             
         # Track progress with tensorboard-style output
-        writer = SummaryWriter(self.tensorboard_dir)
+        tqdm.write(f"Logging tensorboard output to {self.tensorboard_dir}")
+        writer = SummaryWriter(os.path.join(self.tensorboard_dir, 'exp_ae_recommender'))
 
         # Rehome, if necessary 
         model = model.to(device)
@@ -80,21 +88,17 @@ class AutoencoderEstimator():
         loss_fn = nn.MSELoss()
 
         optimizer = optim.Adam(model.parameters(), lr=lr)
-
-        loader = dataset.get_data_loader()
+        
         tqdm.write(f"Starting training run...")
         for epoch in tqdm(range(epochs), total=epochs):
         
             running_loss = 0.0
-            for i, reviews in tqdm(enumerate(loader), total=len(dataset)):
+            for i, reviews in tqdm(enumerate(loader), total=len(dataset)/dataset.batch_size):
 
-                # Build a mask to apply later and move it 
-                mask = torch.zeros(reviews.shape)                
-                for dim in range(mask.shape[0]): 
-                    ix = np.nonzero(reviews[dim])
-                    mask[dim][ix] = 1
-
-                # Push our key matrices to whatever device we've got 
+                # Build a mask to apply later 
+                mask = (reviews > 0)
+                
+                # Push our key matrices to whatever device we've got                 
                 mask = mask.to(device)
                 reviews = reviews.to(device)
                 
@@ -108,8 +112,7 @@ class AutoencoderEstimator():
                 # ability to estimate these so we want them to evolve with the other
                 # weights (and we wouldn't know which way to push them anyway)
                 outputs = model(reviews)
-                outputs = outputs * mask
-                loss = loss_fn(outputs, reviews)
+                loss = loss_fn(outputs[mask], reviews[mask])
                 loss.backward()
 
                 optimizer.step()
@@ -117,10 +120,11 @@ class AutoencoderEstimator():
                 # Accumulate metrics for hyperparameter tuning
                 running_loss += loss.item()
 
+                writer.add_scalar(f"training loss", loss, epoch*len(loader)/loader.batch_size)
+
                 if (i % loss_interval) == (loss_interval - 1): 
-                    interval_loss = running_loss / loss_interval
-                    writer.add_scalar('training loss', interval_loss, epoch*len(loader))
-                    tqdm.write(f"[{epoch + 1}, {i + 1:5d}] loss: {interval_loss:.3f}")
+                    interval_loss = running_loss / loss_interval                    
+                    tqdm.write(f"[{epoch + 1}, {i + 1:5d}] loss: {interval_loss:.5f}")
                     running_loss = 0 
         
         # Update our object state
@@ -128,6 +132,19 @@ class AutoencoderEstimator():
         self.u_map = u_map
         self.i_map = i_map 
 
+        hps = { 
+            'train_reviews' : len(dataset),
+            'train_items' : len(i_map),
+            'train_users' : len(u_map), 
+            'epochs':epochs, 
+            'lr': lr, 
+            'batch_size': loader.batch_size,
+            'autoencoder_io_dims': model.dims, 
+            'autoencoder_hidden_1': model.l1,
+            'autoencoder_hidden_2': model.l2,
+        }        
+        writer.add_hparams(hps, {}) 
+        writer.close()
         tqdm.write("Training complete!") 
 
         return model, train_loss 
