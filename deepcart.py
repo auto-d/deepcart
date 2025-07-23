@@ -10,45 +10,13 @@ import tempfile
 import glob
 from dataset import DeepCartDataset, DeepCartTorchDataset
 from process import run_subprocess
+from demo import demo
 
-def deploy_demo(token): 
+def deploy(share=False, data_tag="test"): 
     """
-    Deploy a model to HuggingFace Spaces, optionally refreshing the code in the 
-    container prior
+    Deploy, optionally pushing to the cloud (share = True)
     """
-    
-    #TODO: update or discard 
-
-    # Inconsistent results pushing via huggingface-cli and https, rely on 
-    # SSH (pubkey loaded on distant end) 
-    spaces_https_url = "https://huggingface.co/spaces/3emaphor/forklift"
-    spaces_git_url = "git@hf.co:spaces/3emaphor/forklift"
-
-    with tempfile.TemporaryDirectory() as tmp: 
-
-        print("Attempting to push ./demo/* to {spaces_git_url}...")
-        cmds = []
-        cmds.append(["git", "clone", spaces_git_url, tmp]) 
-        cmds.append(["cp"] + glob.glob("./demo/*") + [tmp])
-        cmds.append(["git", "-C", tmp, "add", "."])
-        cmds.append(["git", "-C", tmp, "commit", "-m", "automated deploy"])
-        cmds.append(["git", "-C", tmp, "push"])
-        
-        for cmd in cmds: 
-            result, text = run_subprocess(cmd) 
-
-        print("Completed! {spaces_https_url} should be redeploying ... now. ")
-        
-    return result, text
-
-def deploy(token, model, refresh=False): 
-    """
-    Deploy a model, optionall refreshing the underlying demo app in the process. 
-    NOTE: we've got a copy of the token here, but really just needs to live in 
-    the environment so the 
-    """
-    if refresh: 
-        deploy_demo(token) 
+    demo(share, data_tag)
 
 def load_secrets(): 
     """
@@ -141,9 +109,8 @@ def build_parser():
 
     # Deploy mode 
     deploy_parser = subparsers.add_parser("deploy")
-    deploy_parser.add_argument("--model_dir", type=readable_dir, help="Directory to load model from")
-    deploy_parser.add_argument("--type", choices=['naive', 'classic', 'neural'], default='neural')
-    deploy_parser.add_argument("--refresh",  action="store_true", help="Whether or not to refresh the server code prior to deployment.", default=False)
+    deploy_parser.add_argument("--data-tag", type=str, help="Data tag associated with the ref data")
+    deploy_parser.add_argument("--share", type=bool, default=False, help="Whether or not to deploy to gradio hosting")
     
     return parser
     
@@ -204,10 +171,7 @@ def router():
                     autoencoder.test(model, torch_dataset, dataset.test_chk, top_k=args.top_k)
 
         case "deploy":
-            if token: 
-                deploy(args.model_dir, token, args.refresh)
-            else: 
-                print("No huggingface token found!")
+            deploy(args.share, args.data_tag)
         case _:
             parser.print_help()
 
