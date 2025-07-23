@@ -158,14 +158,14 @@ class DeepCartDataset():
         # sets again to support this strategy
         val_src, val_target = python_stratified_split(
             data=val, 
-            ratio=0.8, 
+            ratio=0.7, 
             filter_by="item", 
             col_user="user_id", 
             col_item="item_id"
             )
         test_src, test_target = python_stratified_split(
             data=test, 
-            ratio=0.8, 
+            ratio=0.7, 
             filter_by="item", 
             col_user="user_id", 
             col_item="item_id"

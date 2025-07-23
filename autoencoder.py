@@ -101,10 +101,13 @@ class AutoencoderEstimator():
                 # ability to estimate these 
                 outputs = model(reviews)
                 loss = loss_fn(outputs, reviews)
+                loss.backward()
 
                 #TODO: inspect loss values here and mask before computing gradients at each layer
+                #https://stackoverflow.com/questions/78958840/how-to-create-a-gradient-mask-in-pytorch
+                
+                model.grad = model.grad
 
-                loss.backward()
                 optimizer.step()
 
                 # Accumulate metrics for hyperparameter tuning
@@ -218,11 +221,11 @@ def train(train, epochs, val, val_chk):
     model.train(dataset=train, val=val, val_chk=val_chk, epochs=epochs)
     return model 
 
-def test(model, test, test_chk):
+def test(model, test, test_chk, top_k):
     """
     Test the autoencoder model 
     """
-    top_ks = model.recommend(model, test)
-    scores = model.score(top_ks, test, test_chk)
-    tqdm.write(f"Naive mean scores for the provided dataset: {np.mean(scores)}")
+    top_ks = model.recommend(test, top_k)
+    scores = model.score(top_ks, test_chk)
+    tqdm.write(f"Autoencoder mean scores for the provided dataset: {np.mean(scores)}")
 

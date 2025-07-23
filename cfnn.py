@@ -19,9 +19,9 @@ class CfnnEstimator(BaseEstimator):
         """
         Initialize a new instance of the model 
         """
-        self.u_map = None
-        self.i_map = None
-        self.matrix = None
+        self.model_u_map = None
+        self.model_i_map = None
+        self.similarity_matrix = None
 
     def compare_users(self, ui_a, a_ix, ui_b, b_ix, metric):
         """
@@ -67,7 +67,7 @@ class CfnnEstimator(BaseEstimator):
         # strategy because of) the u^2 memory requirement. Unlike our affinity matrices, 
         # these are not sparse. Since our goal is recommending items, we'll compute the similarity
         # iteratively and store just the top similar users to get down to C * u memory pattern
-        similarity_matrix = np.array([[0.] * k] * len(u_map))
+        similarity_matrix = np.array([[0] * k] * len(u_map))
 
         # ❗TODO: be careful here, validate that our array multiplication above created distinct arrays 
         # and not copies of the same array which 
@@ -85,10 +85,10 @@ class CfnnEstimator(BaseEstimator):
             top = sorted(sim_a.items(), key=lambda x: x[1], reverse=True)[:k]
             similarity_matrix[a] = [x[0] for x in top]
 
-        self.ui = ui
-        self.u_map = u_map 
-        self.i_map = i_map 
-        self.matrix = similarity_matrix
+        self.model_ui = ui
+        self.model_u_map = u_map 
+        self.model_i_map = i_map 
+        self.similarity_matrix = similarity_matrix
         return self
 
     def recommend(self, ui, k) -> np.ndarray: 
@@ -106,23 +106,23 @@ class CfnnEstimator(BaseEstimator):
             # We need to cache items this user has already interacted with and find a proxy 
             # for their reviews (to make recommendations). If this user hasn't been seen 
             # previously we'll have to dig around in training data for a similar user. 
-            rated = []            
+            rated = []
 
-            target_id = similarity.find_key(self.u_map, u)
+            target_id = similarity.find_key(self.model_u_map, u)
             if target_id:
-                target_ix = self.u_map.get(target_id)
-                rated = np.nonzero(self.ui[target_ix]) 
+                target_ix = self.model_u_map.get(target_id)
+                rated = list(np.nonzero(self.model_ui[target_ix])[0])
                 
-                # Pull the most similar user we recorded during training
-                proxy_ix = self.similarity_matrix[target_ix][0]      
+                # Pull the list of similar user indices we recorded during training
+                proxy_ix = self.similarity_matrix[target_ix]     
 
             else:
                 tqdm.write(f"Unknown user {similarity.find_key(u_map,u)} encountered!")
 
                 # Do a live similarity comparison to find a proxy user in the training data
                 proxy = { 'id': None, 'similarity': 0, 'ix': None }
-                for user_id, user_ix in self.u_map.items(): 
-                    sim = self.compare_users(ui, u, self.ui, user_ix) 
+                for user_id, user_ix in self.model_u_map.items(): 
+                    sim = self.compare_users(ui, u, self.model_ui, user_ix) 
                     if sim > proxy['similarity']: 
                         proxy['id'] = user_id
                         proxy['ix'] = user_ix                        
@@ -130,19 +130,20 @@ class CfnnEstimator(BaseEstimator):
                                 
                 tqdm.write(f"Matched to proxy user {proxy['id']} (similarity = {proxy['similarity']})")
                 proxy_ix = proxy['ix']
-                rated = np.nonzero(ui[u])
+                rated = list(np.nonzero(ui[u])[0]) 
             
             # Find a/the highest rated item which the target user hasn't yet interacted with
             recommended = []
             
             while len(recommended) < k: 
-                best_rated = similarity.argmax(self.ui[proxy_ix], exclude=rated + recommended) 
+                best_rated = similarity.argmax(self.model_ui[proxy_ix], exclude=rated + recommended) 
+                
                 recommended.append(best_rated)
             
                 row = [
-                    similarity.find_key(self.u_map, u), 
-                    similarity.find_key(self.i_map, best_rated), 
-                    self.item_ratings[best_rated]
+                    similarity.find_key(u_map, u), 
+                    similarity.find_key(self.model_i_map, best_rated), 
+                    self.model_ui[proxy_ix][best_rated]
                     ]
                 recommendations.append(row)
         
@@ -204,10 +205,10 @@ def train(train, val, val_chk):
     model.fit(train, val, val_chk)
     return model     
 
-def test(model, test, test_chk):
+def test(model, test, test_chk, top_k):
     """
     Test the CFNN model 
     """
-    top_ks = model.recommend(test)
-    scores = model.score(top_ks, test, test_chk)
-    tqdm.write(f"Naive mean scores for the provided dataset: {np.mean(scores)}")
+    top_ks = model.recommend(test, top_k)
+    scores = model.score(top_ks, test_chk)
+    tqdm.write(f"CF NN mean scores for the provided dataset: {np.mean(scores)}")
