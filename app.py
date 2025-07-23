@@ -14,7 +14,7 @@ model = None
 
 # Our poor-man's shopping interface, a set of gallery images and item selections
 products = []
-top_k = 5
+top_k = 20
 selected = 0
 
 def initialize():         
@@ -36,10 +36,28 @@ def initialize():
     
     # Bootstrap our predictions with the model's best guesses    
     recs = model.recommend(user_data, k=20)
+    update_products(recs)
+
+def get_product_images():
+    """
+    Build a list of sample images
+    """
+    return [item["url"] for item in products]
+
+def update_products(recs): 
+    """
+    Rebuild our product metadata 
+    """    
+    global products 
+    global selected
+
     products = []
     for index, item in recs.iterrows(): 
         details = get_item_details(item.item_id)
         products.append(details) 
+    
+    # We have rebased our list, selection is invalidated
+    selected = 0 
 
 def get_item_details(item_id):
     """
@@ -67,32 +85,23 @@ def get_item_details(item_id):
             "url": url 
         }
 
-def change_mode(mode): 
+def update_topk(topk=5):
     """
-    Toggle mode
-    """
-    print(f"Mode changed to {mode}")
-  
-# Build the initial dataset samples
-def build_dataset_samples():
-    """
-    Revise the samples
-    """
-    return [item["url"] for item in products]
-
-def generate(topk=5):
-    """
-    Generate new recommendations when the top_k changes
+    Top K update
     """
     global user_data
     global model 
     global products 
+    global top_k
 
+    top_k = topk
+
+    # We have to update our recommendations if the top_k requirement has changed
     if model: 
-        top_ks = model.recommend(user_data, k=topk)
-        print(top_ks)
+        recs = model.recommend(user_data, k=top_k)
+        update_products(recs)
 
-    return build_dataset_samples()
+    return get_product_images()
 
 def on_click(evt: gr.SelectData):
     """
@@ -127,27 +136,37 @@ def submit_rating(r):
     global model 
     global products 
     global selected 
+    global top_k
 
+    stars = ["⭐", "⭐⭐", "⭐⭐⭐", "⭐⭐⭐⭐", "⭐⭐⭐⭐⭐"]
+    
     # Bootstrap our predictions with the model's best guesses    
     selected_item = products[selected]['id']
     item_index = user_data.i_map.get(selected_item)
-    user_data.ui[0][item_index] = r/5
+    rating = (stars.index(r)+1)/5
+    user_data.ui[0][item_index] = rating
 
-    recs = model.recommend(user_data, k=20)
+    recs = model.recommend(user_data, k=top_k)
     products = []
     for index, item in recs.iterrows(): 
         details = get_item_details(item.item_id)
         products.append(details) 
 
-    return build_dataset_samples()
+    update_products(recs) 
+
+    return get_product_images(), gr.update(value=None)
 
 def main(): 
     """
-    Our Gradio application. 
+    Our Gradio demo app!
+    
+    NOTE: Use of gr.Radio with emojis courtesy of gpt-4o, see https://chatgpt.com/share/68813240-1cf4-8013-b0d5-393e661c9508
 
     NOTE: The base code for the Gradio gallery is sourced from a dialogue with gpt-4o regarding the best
     way to emulate a shopping cart interface. See https://chatgpt.com/share/6880fcab-233c-8013-8df7-0b1195abb52c
     for the exchange. 
+
+    NOTE: General troubleshooting of inscrutable Gradio behavior assisted by gpt-4o
     """
     global products 
 
@@ -156,27 +175,26 @@ def main():
 
         # Header         
         gr.Markdown(value="# 🛒 DeepCart")
-        gr.Markdown(value="##  Probing the depths of the Amazon electronics storefront")
-        gr.Markdown(value="You've seen the best products Amazon has to offer, but have you seen the worst? Interact with our collection of the worst products the storefront has to offer and see more terrible products based on your preferences!")
+        gr.Markdown(value="##  Plumbing the depths of the Amazon electronics storefront!")
+        gr.Markdown(value="You've seen the best products Amazon has to offer, but have you seen the worst? Interact with our collection of the worst products the storefront has to offer and see more terrible products based on your preferences! 💩")
 
-        topk_slider = gr.Slider(label="Recommendations to generate", value=5, maximum=50, step=5)
+        with gr.Row():             
+            gr.Markdown(value="Below you'll find the very best AI recommendations to enhance your product browsing experience! Select a product to view information and rate it to see updated recommendations!")
+            topk_slider = gr.Slider(label="Recommendations to generate", value=10, maximum=100, step=5)
 
-        # Use of gr.Radio with emojis courtesy of gpt-4o, see
-        # https://chatgpt.com/share/68813240-1cf4-8013-b0d5-393e661c9508
 
         initialize()         
-
-        gallery = gr.Gallery(label="Products", columns=3, height="auto", 
-                             value = build_dataset_samples())         
-        product_info = gr.Markdown(label="Product Info")
+        
+        gallery = gr.Gallery(label="AI Recommendations", columns=3, height="auto", 
+                             value = get_product_images())         
+        product_info = gr.Markdown(label="Product Information")
 
         gallery.select(fn=on_click, outputs=product_info)
-        topk_slider.change(fn=generate, inputs=topk_slider, outputs=gallery)
+        topk_slider.change(fn=update_topk, inputs=topk_slider, outputs=gallery)
 
         with gr.Column(): 
             rating = gr.Radio(choices=["⭐", "⭐⭐", "⭐⭐⭐", "⭐⭐⭐⭐", "⭐⭐⭐⭐⭐"], label="Rate this product!")
-            output = gr.Textbox("Output")
-            rating.change(fn=submit_rating, inputs=rating, outputs=output)
+            rating.change(fn=submit_rating, inputs=rating, outputs=[gallery, rating])
 
     demo.launch(share=False)
 
