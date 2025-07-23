@@ -102,55 +102,68 @@ class CfnnEstimator(BaseEstimator):
 
         # For each provided user, find the most similar user
         for u in tqdm(range(len(u_map))): 
+                        
+            rated = []
+            proxies = []
+
+            target_id = similarity.find_key(self.model_u_map, u)
             
             # We need to cache items this user has already interacted with and find a proxy 
             # for their reviews (to make recommendations). If this user hasn't been seen 
-            # previously we'll have to dig around in training data for a similar user. 
-            rated = []
-
-            target_id = similarity.find_key(self.model_u_map, u)
-            if target_id:
+            # previously we'll have to dig around in training data for a similar user.
+            if not target_id:
+                tqdm.write(f"Unknown user {similarity.find_key(u_map,u)} encountered!")
+                
+                # Do a live similarity comparison to find a proxy user in the training data
+                best_match = 0
+                for user_id, user_ix in self.model_u_map.items(): 
+                    sim = self.compare_users(ui, u, self.model_ui, user_ix) 
+                    if sim > best_match: 
+                        target_id = user_id
+                        target_ix = user_ix                        
+                                
+                # Our only evidence of this user's reviews are what came along in the dataset
+                # here. Map these ratings to the associated items in our training data. 
+                new_rated = list(np.nonzero(ui[u])[0]) 
+                rated = similarity.map_keys(i_map, new_rated, self.model_i_map)
+            
+            else:
                 target_ix = self.model_u_map.get(target_id)
                 rated = list(np.nonzero(self.model_ui[target_ix])[0])
                 
-                # Pull the list of similar user indices we recorded during training
-                proxy_ix = self.similarity_matrix[target_ix]     
-
-            else:
-                tqdm.write(f"Unknown user {similarity.find_key(u_map,u)} encountered!")
-
-                # Do a live similarity comparison to find a proxy user in the training data
-                proxy = { 'id': None, 'similarity': 0, 'ix': None }
-                for user_id, user_ix in self.model_u_map.items(): 
-                    sim = self.compare_users(ui, u, self.model_ui, user_ix) 
-                    if sim > proxy['similarity']: 
-                        proxy['id'] = user_id
-                        proxy['ix'] = user_ix                        
-                        proxy['similarity'] = sim
-                                
-                tqdm.write(f"Matched to proxy user {proxy['id']} (similarity = {proxy['similarity']})")
-                proxy_ix = proxy['ix']
-                rated = list(np.nonzero(ui[u])[0]) 
-            
-            # Find a/the highest rated item which the target user hasn't yet interacted with
+            # Retrieve the most similar users (for the current user or their stand-in) recorded 
+            # during training... these will source recommendations 
+            proxies = self.similarity_matrix[target_ix]
+              
+            # Find a/the highest rated items which the target user hasn't yet interacted with
             recommended = []
             
-            while len(recommended) < k: 
-                best_rated = similarity.argmax(self.model_ui[proxy_ix], exclude=rated + recommended) 
-                
-                recommended.append(best_rated)
-            
-                row = [
-                    similarity.find_key(u_map, u), 
-                    similarity.find_key(self.model_i_map, best_rated), 
-                    self.model_ui[proxy_ix][best_rated]
-                    ]
-                recommendations.append(row)
+            for proxy in proxies: 
+
+                while True: 
+                    best_rated = similarity.argmax(self.model_ui[proxy], exclude=rated + recommended) 
+                    
+                    # If we're out of 'good' items, move to the next user
+                    if self.model_ui[proxy][best_rated] <= 3: 
+                        break 
+
+                    # This is worth recommending, stick it on the list
+                    row = [
+                        similarity.find_key(u_map, u), 
+                        similarity.find_key(self.model_i_map, best_rated), 
+                        self.model_ui[proxy][best_rated]
+                        ]
+                    recommendations.append(row)
+
+                    # Iterate until full of recs 
+                    recommended.append(best_rated)
+                    if len(recommended) >= k: 
+                        break
         
         df = pd.DataFrame(recommendations, columns=['user_id', 'item_id', 'rating']) 
         return df 
     
-    def score(self, top_ks, test, test_chk, k=10):
+    def score(self, top_ks, test_chk, k):
         """
         Employ the recommenders library to calculate MAP@K here. 
         NOTE: Recommenders examples used to source call semantics, see e.g.
@@ -159,10 +172,13 @@ class CfnnEstimator(BaseEstimator):
 
         tqdm.write(f"Scoring recommendations... ")
 
-        recs_df = test.map_back_sparse(top_ks, kind='prediction')
-        test_df = test.map_back_sparse(test_chk, kind='ratings')
-
-        map = map_at_k(test_df, recs_df, col_prediction='prediction', k=k)
+        map = map_at_k(
+            test_chk.df, 
+            top_ks, 
+            col_item="item_id", 
+            col_user="user_id", 
+            col_prediction='prediction', 
+            k=k)
         
         tqdm.write(f"MAP@K (k={k}): {map}")
 
@@ -210,5 +226,5 @@ def test(model, test, test_chk, top_k):
     Test the CFNN model 
     """
     top_ks = model.recommend(test, top_k)
-    scores = model.score(top_ks, test_chk)
+    scores = model.score(top_ks, test_chk, top_k)
     tqdm.write(f"CF NN mean scores for the provided dataset: {np.mean(scores)}")

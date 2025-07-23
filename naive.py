@@ -84,7 +84,7 @@ class NaiveEstimator(BaseEstimator):
         df = pd.DataFrame(recommendations, columns=['user_id', 'item_id', 'prediction']) 
         return df 
     
-    def score(self, top_ks, test_chk, k=10):
+    def score(self, top_ks, test_chk, k):
         """
         Employ the recommenders library to calculate MAP@K here. 
         NOTE: Recommenders examples used to source call semantics, see e.g.
