@@ -163,7 +163,7 @@ class AutoencoderEstimator():
         ds = DeepCartTorchDataset(ui=np.array([self.schema]), u_map=self.u_map, i_map=self.i_map, batch_size=1)
         return ds
 
-    def recommend(self, dataset, k) -> np.ndarray: 
+    def recommend(self, dataset, k, reverse=False) -> np.ndarray: 
         """
         Generate top k predictions given a list of item ratings (one per user)
         """
@@ -193,14 +193,19 @@ class AutoencoderEstimator():
                 output = logits.to("cpu").flatten().numpy()
                 recommended = []
                 while len(recommended) < k: 
-                    best_rated = similarity.argmax(output, exclude=rated + recommended) 
-                    recommended.append(best_rated)
+                    best = None
+                    if reverse: 
+                        best = similarity.argmin(output, exclude=rated + recommended) 
+                    else:
+                        best = similarity.argmax(output, exclude=rated + recommended) 
+
+                    recommended.append(best)
                                         
                     # Record stand-in user, recommended item and inferred rating
                     row = [
                         similarity.find_key(u_map, u), 
-                        similarity.find_key(self.i_map, best_rated),
-                        output[best_rated]
+                        similarity.find_key(self.i_map, best),
+                        output[best]
                         ]
                     recommendations.append(row)
 

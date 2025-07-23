@@ -11,6 +11,7 @@ from sklearn.metrics import classification_report, accuracy_score, top_k_accurac
 ref_data = None
 user_data = None 
 model = None
+tag = "test"
 
 # Our poor-man's shopping interface, a set of gallery images and item selections
 products = []
@@ -25,9 +26,11 @@ def initialize():
     global ref_data
     global model 
     global products 
+    global tag
+    global top_k
 
     # Retrieve product reference information 
-    ref_data = DeepCartDataset("small")
+    ref_data = DeepCartDataset(tag)
     ref_data.load("data/processed")
 
     # Recover our model and create an empty dataset for our user(s)
@@ -35,26 +38,34 @@ def initialize():
     user_data = model.prepare_new_dataset()
     
     # Bootstrap our predictions with the model's best guesses    
-    recs = model.recommend(user_data, k=20)
+    recs = model.recommend(user_data, top_k, reverse=True)
     update_products(recs)
 
 def get_product_images():
     """
     Build a list of sample images
     """
+    global products
+
     return [item["url"] for item in products]
 
 def update_products(recs): 
     """
-    Rebuild our product metadata 
+    Rebuild our product metadata     
     """    
     global products 
     global selected
 
     products = []
-    for index, item in recs.iterrows(): 
+    
+    # To limit the first-item/popularity bias, randomize our recommendations
+    # Snippet for randomizing the sample from gpt-4o: 
+    # https://chatgpt.com/share/68815a7f-21a0-8013-bb08-be7fac4480d6
+    
+    for index, item in recs.sample(frac=1).iterrows(): 
         details = get_item_details(item.item_id)
-        products.append(details) 
+        if details: 
+            products.append(details) 
     
     # We have rebased our list, selection is invalidated
     selected = 0 
@@ -98,7 +109,7 @@ def update_topk(topk=5):
 
     # We have to update our recommendations if the top_k requirement has changed
     if model: 
-        recs = model.recommend(user_data, k=top_k)
+        recs = model.recommend(user_data, k=top_k, reverse=True)
         update_products(recs)
 
     return get_product_images()
@@ -140,23 +151,26 @@ def submit_rating(r):
 
     stars = ["⭐", "⭐⭐", "⭐⭐⭐", "⭐⭐⭐⭐", "⭐⭐⭐⭐⭐"]
     
-    # Bootstrap our predictions with the model's best guesses    
-    selected_item = products[selected]['id']
-    item_index = user_data.i_map.get(selected_item)
-    rating = (stars.index(r)+1)/5
-    user_data.ui[0][item_index] = rating
+    # We get some phantom rating updates when the UI is refreshed, ignore
+    if r: 
+       
+        # Bootstrap our predictions with the model's best guesses    
+        selected_item = products[selected]['id']
+        item_index = user_data.i_map.get(selected_item)
+        rating = (stars.index(r)+1)/5
+        user_data.ui[0][item_index] = rating
 
-    recs = model.recommend(user_data, k=top_k)
-    products = []
-    for index, item in recs.iterrows(): 
-        details = get_item_details(item.item_id)
-        products.append(details) 
+        recs = model.recommend(user_data, k=top_k, reverse=True)
+        products = []
+        for index, item in recs.iterrows(): 
+            details = get_item_details(item.item_id)
+            products.append(details) 
 
-    update_products(recs) 
+        update_products(recs) 
 
     return get_product_images(), gr.update(value=None)
 
-def main(): 
+def demo(share=False, data_tag="small"): 
     """
     Our Gradio demo app!
     
@@ -169,6 +183,9 @@ def main():
     NOTE: General troubleshooting of inscrutable Gradio behavior assisted by gpt-4o
     """
     global products 
+    global tag 
+
+    tag = data_tag
 
     demo = gr.Blocks()
     with demo: 
@@ -176,27 +193,28 @@ def main():
         # Header         
         gr.Markdown(value="# 🛒 DeepCart")
         gr.Markdown(value="##  Plumbing the depths of the Amazon electronics storefront!")
-        gr.Markdown(value="You've seen the best products Amazon has to offer, but have you seen the worst? Interact with our collection of the worst products the storefront has to offer and see more terrible products based on your preferences! 💩")
+        gr.Markdown(value="You've seen the best products Amazon has to offer, but have you seen the worst? Interact with our collection of the storefront stinkers and see more terrible products based on your preferences! 🦨")
+
+        gr.Markdown(value="Below you'll find the very best AI recommendations to enhance your product browsing experience! Select a product to view information and rate it to see updated recommendations!")
 
         with gr.Row():             
-            gr.Markdown(value="Below you'll find the very best AI recommendations to enhance your product browsing experience! Select a product to view information and rate it to see updated recommendations!")
+            gr.Markdown(value="*If you'd like to see more recommendations, adjust accordingly with the slider to the right.*")            
             topk_slider = gr.Slider(label="Recommendations to generate", value=10, maximum=100, step=5)
-
-
+        
         initialize()         
         
         gallery = gr.Gallery(label="AI Recommendations", columns=3, height="auto", 
                              value = get_product_images())         
-        product_info = gr.Markdown(label="Product Information")
-
-        gallery.select(fn=on_click, outputs=product_info)
-        topk_slider.change(fn=update_topk, inputs=topk_slider, outputs=gallery)
-
+        
         with gr.Column(): 
+            product_info = gr.Markdown(label="Product Information", value="Select an item to display more product information!")        
             rating = gr.Radio(choices=["⭐", "⭐⭐", "⭐⭐⭐", "⭐⭐⭐⭐", "⭐⭐⭐⭐⭐"], label="Rate this product!")
             rating.change(fn=submit_rating, inputs=rating, outputs=[gallery, rating])
 
-    demo.launch(share=False)
+            gallery.select(fn=on_click, outputs=product_info)
+            topk_slider.change(fn=update_topk, inputs=topk_slider, outputs=gallery)
+
+    demo.launch(share=share)
 
 if __name__ == "__main__":
-    main()
+    demo()
