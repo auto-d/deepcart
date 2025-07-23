@@ -200,15 +200,20 @@ class DeepCartTorchDataset(torch.utils.data.Dataset):
     parallelism and shuffling memory to GPU & back
     """
 
-    def __init__(self, matrix:AffinityMatrix, batch_size=10): 
+    def __init__(self, matrix:AffinityMatrix=None, ui=None, u_map=None, i_map=None, batch_size=10): 
         """
-        Initialize a new instance given a sparse matrix of reviews
+        Initialize a new instance given a sparse matrix of reviews or the raw data (user-item matrix, 
+        user map, item map).        
         """
         self.batch_size = batch_size
-        self.ui, self.u_map, self.i_map = matrix.gen_affinity_matrix()
-        
-        # Scale reviews to [0,1] for our network 
-        self.ui = np.divide(self.ui, 5).astype(np.float32)
+        if matrix: 
+            self.ui, self.u_map, self.i_map = matrix.gen_affinity_matrix()
+        elif ui is not None and u_map is not None and i_map is not None: 
+            self.ui = ui
+            self.u_map = u_map
+            self.i_map = i_map 
+        else: 
+            raise ValueError("Can't construct dataset due to params!")
 
     def __len__(self): 
         """
@@ -220,7 +225,9 @@ class DeepCartTorchDataset(torch.utils.data.Dataset):
         """
         Retrieve an item at the provided index
         """
-        item = self.ui[idx]
+        # Scale reviews to [0,1] for our network 
+        reviews = self.ui[idx]
+        item = np.divide(reviews, 5).astype(np.float32)
         return item 
 
     def get_mappings(self): 

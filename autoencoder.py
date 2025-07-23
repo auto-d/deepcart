@@ -1,5 +1,6 @@
 import os
 import math 
+from datetime import datetime
 import torch 
 import numpy as np 
 import pandas as pd 
@@ -10,6 +11,8 @@ import torch.optim as optim
 from torch.utils.tensorboard import SummaryWriter
 from recommenders.evaluation.python_evaluation import map_at_k, ndcg_at_k, precision_at_k, recall_at_k
 import similarity
+from recommenders.datasets.sparse import AffinityMatrix
+from dataset import DeepCartTorchDataset
 
 class Autoencoder(nn.Module):
     """
@@ -77,7 +80,7 @@ class AutoencoderEstimator():
             
         # Track progress with tensorboard-style output
         tqdm.write(f"Logging tensorboard output to {self.tensorboard_dir}")
-        writer = SummaryWriter(os.path.join(self.tensorboard_dir, 'exp_ae_recommender'))
+        writer = SummaryWriter(os.path.join(self.tensorboard_dir), 'exp_ae_recommender')
 
         # Rehome, if necessary 
         model = model.to(device)
@@ -129,6 +132,8 @@ class AutoencoderEstimator():
         
         # Update our object state
         self.model = model 
+        self.schema = dataset[0]
+        self.schema[:] = 0 
         self.u_map = u_map
         self.i_map = i_map 
 
@@ -149,6 +154,15 @@ class AutoencoderEstimator():
 
         return model, train_loss 
 
+    def prepare_new_dataset(self): 
+        """
+        When recommending for new users, we have no interaction data, provide a 
+        bootstrapping method that creates anew dataset to help the client understand
+        our schema as well as fill out clicks (to enable prediction)
+        """
+        ds = DeepCartTorchDataset(ui=np.array([self.schema]), u_map=self.u_map, i_map=self.i_map, batch_size=1)
+        return ds
+
     def recommend(self, dataset, k) -> np.ndarray: 
         """
         Generate top k predictions given a list of item ratings (one per user)
@@ -167,21 +181,22 @@ class AutoencoderEstimator():
 
             # Generate recommendations
             for u, reviews in tqdm(enumerate(dataset.get_data_loader()), total=len(dataset)):
-                
+
                 # Note the ratings for this user
-                rated = np.nonzero(reviews) 
+                rated = np.nonzero(reviews[0]) 
+                rated = rated[0].tolist() if len(rated) != 0 else []
 
                 reviews = reviews.to(device)
                 logits = model(reviews) 
 
                 # Find the top_k novel recommendations 
-                output = logits.to("cpu").flatten()
+                output = logits.to("cpu").flatten().numpy()
                 recommended = []
-                while len(output) < k: 
+                while len(recommended) < k: 
                     best_rated = similarity.argmax(output, exclude=rated + recommended) 
                     recommended.append(best_rated)
                                         
-                    # Record provided user, recommended item and inferred rating
+                    # Record stand-in user, recommended item and inferred rating
                     row = [
                         similarity.find_key(u_map, u), 
                         similarity.find_key(self.i_map, best_rated),
@@ -226,7 +241,7 @@ def load_model(path):
     """
     model = torch.load(os.path.join(path, "autoencoder.pt"), weights_only=False)
     
-    if type(model) != Autoencoder: 
+    if type(model) != AutoencoderEstimator: 
         raise ValueError(f"Found unexpected type {type(model)} in {path}!")
 
     return model

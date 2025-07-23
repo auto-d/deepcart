@@ -200,7 +200,7 @@ def router():
                     cfnn.test(model, dataset.test, dataset.test_chk, top_k=args.top_k) 
                 case 'neural': 
                     model = autoencoder.load_model(args.model_dir)
-                    torch_dataset = DeepCartTorchDataset(dataset.test)
+                    torch_dataset = DeepCartTorchDataset(matrix=dataset.test)
                     autoencoder.test(model, torch_dataset, dataset.test_chk, top_k=args.top_k)
 
         case "deploy":
