@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 import argparse 
 import os
 import naive
@@ -6,8 +8,7 @@ import cfnn
 import naive
 import tempfile
 import glob
-import asyncio 
-import dataset 
+from dataset import DeepCartDataset, DeepCartTorchDataset
 from process import run_subprocess
 
 def deploy_demo(token): 
@@ -103,15 +104,11 @@ def nonexistent_dir(path):
             raise argparse.ArgumentTypeError(f"Path '{path}' exists and is not a directory.")
     return path
 
-def router(): 
+def build_parser(): 
     """
-    Argument processor and router
-
-    @NOTE: Argparsing with help from chatgpt: https://chatgpt.com/share/685ee2c0-76c8-8013-abae-304aa04b0eb1
-    @NOTE: arg parsing logic incorporates work from NLP assignment
+    Apply a command-line schema, returning a parser
     """
-
-    parser = argparse.ArgumentParser("deepcart", description="Amazpon electronics recommendations via variational autoencoder")
+    parser = argparse.ArgumentParser("deepcart", description="Amazon electronics recommendations via variational autoencoder")
 
     subparsers = parser.add_subparsers(dest="mode", required=True)
 
@@ -129,14 +126,17 @@ def router():
     train_parser = subparsers.add_parser("train") 
     train_parser.add_argument("--data-dir", type=readable_dir, help="Directory to look for tagged dataset", default="data/processed", required=False)
     train_parser.add_argument("--data-tag", type=str, help="Dataset tag to look for (set during creation)", required=True)
-    train_parser.add_argument("--model-dir", help="Directory to write resulting model to", required=False, default="models")
-    train_parser.add_argument("--nn_epochs", type=int, default=3)
+    train_parser.add_argument("--model-dir", help="Directory to write resulting model to", default="models")
+    train_parser.add_argument("--nn-epochs", type=int, default=1)
+    train_parser.add_argument("--nn-batch", type=int, default=1)
     train_parser.add_argument("--type", choices=['naive', 'classic', 'neural'], default='neural')
 
     # Test mode 
     test_parser = subparsers.add_parser("test") 
-    test_parser.add_argument("--model_dir", type=readable_dir, help="Directory to load model from")
-    test_parser.add_argument("--dataset", type=readable_file, help="Dataset to test model on")
+    test_parser.add_argument("--model_dir", type=readable_dir, help="Directory to load model from", default="models")
+    test_parser.add_argument("--data-dir", type=readable_dir, help="Directory to look for tagged dataset", default="data/processed", required=False)    
+    test_parser.add_argument("--data-tag", type=str, help="Dataset tag to look for (set during creation)", required=True)
+    test_parser.add_argument("--top-k", type=int, help="Number of recommendations to evaluate", default=10)
     test_parser.add_argument("--type", choices=['naive', 'classic', 'neural'], default='neural')
 
     # Deploy mode 
@@ -145,52 +145,71 @@ def router():
     deploy_parser.add_argument("--type", choices=['naive', 'classic', 'neural'], default='neural')
     deploy_parser.add_argument("--refresh",  action="store_true", help="Whether or not to refresh the server code prior to deployment.", default=False)
     
-    args = parser.parse_args()
+    return parser
     
-    hf_token = load_secrets()
-    if args.mode == "build":
-        dataset.build(
-            args.items_file, 
-            args.reviews_file, 
-            args.tag, 
-            args.output_dir, 
-            args.min_interactions, 
-            args.min_ratings, 
-            args.sample_n)
+def router(): 
+    """
+    Argument processor and router
 
-    elif args.mode == "train":
-        users, reviews, _ = dataset.load(args.data_dir, args.data_tag)
-        if args.type == 'naive':
-            #naive.train(args.dataset, args.model_dir)
-            pass
-        if args.type == 'classic':
-            model = cfnn.train(users, reviews) 
-            cfnn.save_model(model, args.model_dir)
-        if args.type == 'neural': 
-            #TODO: move this logic into the autoencoder's train method             
-            model = autoencoder.train(
-                users, 
-                reviews, 
-                args.nn_epochs)
-            autoencoder.save_model(model, args.model_dir)
+    @NOTE: Argparsing with help from chatgpt: https://chatgpt.com/share/685ee2c0-76c8-8013-abae-304aa04b0eb1
+    @NOTE: arg parsing logic incorporates work from NLP assignment
+    """
 
-    elif args.mode == "test":
-        if args.type == 'naive':
-            #naive.test(args.model_dir, args.dataset)
-            pass
-        if args.type == 'classic':
-            #hmm.test(args.model_dir, args.dataset) 
-            pass
-        if args.type == 'neural': 
-            autoencoder.test(args.model_dir, args.dataset)
+    parser = build_parser() 
+    args = parser.parse_args()    
+    token = load_secrets()
+    
+    match(args.mode):
+        case "build":
+            dataset = DeepCartDataset(args.tag)
+            dataset.extract(
+                args.items_file, 
+                args.reviews_file,
+                args.min_interactions, 
+                args.min_ratings, 
+                args.sample_n)
+            dataset.store(args.output_dir)
 
-    elif args.mode == "deploy":            
-        if hf_token: 
-            deploy(args.model_dir, hf_token, args.refresh)
-        else: 
-            print("No huggingface token found!")
-    else:
-        parser.print_help()
+        case "train":
+            dataset = DeepCartDataset(args.data_tag)
+            dataset.load(args.data_dir)
+            dataset.split()
+
+            match(args.type): 
+                case 'naive':
+                    model = naive.train(dataset.train, dataset.val, dataset.val_chk)
+                    naive.save_model(model, args.model_dir)
+                case 'classic':
+                    model = cfnn.train(dataset.train, dataset.val, dataset.val_chk) 
+                    cfnn.save_model(model, args.model_dir)
+                case 'neural': 
+                    torch_dataset = DeepCartTorchDataset(matrix=dataset.train, batch_size=args.nn_batch)
+                    model = autoencoder.train(torch_dataset, args.nn_epochs, dataset.val, dataset.val_chk)
+                    autoencoder.save_model(model, args.model_dir)
+
+        case  "test":
+            dataset = DeepCartDataset(args.data_tag)
+            dataset.load(args.data_dir)
+            dataset.split() 
+            match (args.type): 
+                case 'naive':
+                    model = naive.load_model(args.model_dir)
+                    naive.test(model, dataset.test, dataset.test_chk, top_k=args.top_k)
+                case 'classic':
+                    model = cfnn.load_model(args.model_dir)
+                    cfnn.test(model, dataset.test, dataset.test_chk, top_k=args.top_k) 
+                case 'neural': 
+                    model = autoencoder.load_model(args.model_dir)
+                    torch_dataset = DeepCartTorchDataset(dataset.test)
+                    autoencoder.test(model, torch_dataset, dataset.test_chk, top_k=args.top_k)
+
+        case "deploy":
+            if token: 
+                deploy(args.model_dir, token, args.refresh)
+            else: 
+                print("No huggingface token found!")
+        case _:
+            parser.print_help()
 
 if __name__ == "__main__": 
     router()

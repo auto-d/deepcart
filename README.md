@@ -4,27 +4,36 @@ DeepCart is a tool to sift through Amazon electronics purchase historicals and s
 
 ## TODO 
 
-- EDA 
-- decide on neural network approach 
-- model and evaluate NN 
-- decide on non-neural approach 
-- model and evalute non-NN 
-- pick a naive approach (random) 
-- evaluate naive approach 
-- build a web app 
+- be clear on how this will be presented
+- implement autoencoder from scratch 
+- implment naive approach that picks the most popular item
+- set up evaluation for all models
+- build a web app to demo
 - write the readme 
 - record a video
 
 ## Problem 
 
+TODO: flip this around and make it a system for telling the user what not to buy. That is, recommend the worst reviewed items and mine the review information for potentially hilarious results. Make sure to cite: https://chatgpt.com/share/687f9234-23a8-8013-9779-969676cf35b1 
+
+We would just need to reverse the data on load... add a command-line switch that enables this during training. 
 
 ## Data Sources
 
+The University of California at San Diego (UCSD) Amazon Review 2023 dataset is the sole source of user interaction data mined for this project. From the project page, the dataset consists of 
+- User Reviews (ratings, text, helpfulness votes, etc.);
+- Item Metadata (descriptions, price, raw image, etc.);
+- Links (user-item / bought together graphs).
+
+We are specifically concerned with the Electronics subset of this expansive dataset, which consists of 18.3 million user reviews, 1.6M items and 43.9 million ratings. Subsampling on users was conducted to reduce the computational complexity of generating recommendations across all models tested. 
   
 ## Prior Efforts 
 
+To the author's knowledge, no prior efforts exist to leverage this reviews dataset to make recommendations using an autoencoder or to recommend negative reviews for comedic effect. 
+
 ## Model Evaluation and Selection 
 
+We apply mean average precision @ k (MAP@K) to baseline and compare our modeling approaches. 
 
 ### Data Processing Pipeline 
 
@@ -70,7 +79,12 @@ Wrote 'small' dataset to data/processed.
 Generation complete!
 ```
 
-  
+**Train Models** 
+
+**Evaluate Models** 
+
+**Deploy a Demo** 
+
 ## Demo Application
 
 ## Results and Conclusions
@@ -93,3 +107,5 @@ The code written in this project is the author's work, made possible by a host o
 The synthetic datasets generated are based purely on Linux kernel symbols and their associated references. Source code and comments are ingeseted into the question datasets used for training. A thorough review of this material has not been conducted, and latent bias, offensive content, or malicious code may have been unintentionally incorporated into the resulting dataset accordingly. 
 
 ## References
+
+[1] Hou, Y., Li, J., He, Z., Yan, A., Chen, X., & McAuley, J. (2024). Bridging language and items for retrieval and recommendation. arXiv preprint arXiv:2403.03952.

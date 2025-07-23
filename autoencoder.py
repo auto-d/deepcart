@@ -1,185 +1,249 @@
+import os
+import math 
+import torch 
 import numpy as np 
 import pandas as pd 
-import keras 
 from tqdm import tqdm
-import os
-from recommenders.datasets.sparse import AffinityMatrix
-from recommenders.datasets.python_splitters import python_random_split, python_stratified_split 
-from recommenders.utils.python_utils import binarize
-from recommenders.models.vae.standard_vae import StandardVAE
+import torch.nn as nn
+import torch.nn.functional as F
+import torch.optim as optim
+from torch.utils.tensorboard import SummaryWriter
+from recommenders.evaluation.python_evaluation import map_at_k, ndcg_at_k, precision_at_k, recall_at_k
+import similarity
 
-def train(users, reviews, items, epochs=2, batch=10):
+class Autoencoder(nn.Module):
     """
-    Train the model with the provided dataset
+    Autoencoder
 
-    NOTE: this is a similar training loop as we used for our vision model in the 
-    the vision project, forward pass
+    NOTE: with cues from https://www.geeksforgeeks.org/deep-learning/implementing-an-autoencoder-in-pytorch/
     """
-    tqdm.write(f"Starting training run...")    
-    print(f"Full user-item matrix is {len(users) * len(items)}")
 
-    # We are trying to teach the model what a good interaction is like, and we'll 
-    # ultimately be interested only in whether to recommend an item or not ... 
-    # low reviews are not something we want the model suggesting... 
-    reviews_low = reviews[reviews.rating < 3]
-    reviews = reviews[reviews.rating >= 3]
+    def __init__(self, dims, l1, l2):
+        """
+        Initialize a new object given an item count 
+        """
+        self.dims = dims
+        self.l1 = l1
+        self.l2 = l2 
 
-    # NOTE: Strategy adapted from tutorials available in the Recommenders project, see 
-    # https://github.com/recommenders-team/recommenders/tree/main
-    # Split along user boundaries to ensure no leakage of preference between train and test
-    train_users, test_users, val_users = python_random_split(users, [.9, .05, .05])
-    print(train_users.shape, test_users.shape, val_users.shape)
+        super().__init__()
 
-    train = reviews[reviews.user_id.isin(train_users.user_id)]
-    val = reviews[reviews.user_id.isin(val_users.user_id)]
-    test = reviews[reviews.user_id.isin(test_users.user_id)]
-    print(train.shape, val.shape, test.shape)
-    
-    # Technique from Recommenders (see https://github.com/recommenders-team/recommenders/blob/45e1b215a35e69b92390e16eb818d4528d0a33a2/examples/02_model_collaborative_filtering/standard_vae_deep_dive.ipynb) 
-    # to improve utility of validation set during training - only allow items in
-    # the validation set that are also present in the train set
-    val = val[val.item_id.isin(train.item_id.unique())]
-    print(val.shape)
-
-    # Another technique employed in Recommenders (see above link for notebook), for in-flight validation to be 
-    # meaningful during training, our validation set needs not just ground truth, but unseen validation samples 
-    # to see if predictions for validation users are relevant (to those users). Anyway, break down our val and test 
-    # sets again to support this strategy
-    val_src, val_target = python_stratified_split(
-        data=val, 
-        ratio=0.8, 
-        filter_by="item", 
-        col_user="user_id", 
-        col_item="item_id"
+        self.encoder = nn.Sequential(
+            nn.Linear(dims, l1),
+            nn.ReLU(), 
+            nn.Linear(l1, l2),
+            nn.ReLU(), 
         )
-    test_src, test_target = python_stratified_split(
-        data=test, 
-        ratio=0.8, 
-        filter_by="item", 
-        col_user="user_id", 
-        col_item="item_id"
+        self.decoder = nn.Sequential(
+            nn.Linear(l2, l1),
+            nn.ReLU(), 
+            nn.Linear(l1, dims),
+            nn.ReLU(), 
+            nn.Sigmoid()
         )
-    
-    print(val.shape, " -> ", val_src.shape, val_target.shape)
-    print(test.shape, " -> ", test_src.shape, test_target.shape)
 
-    #to use standard names across the analysis 
-    header = {
-            "col_user": "user_id",
-            "col_item": "item_id",
-            "col_rating": "rating",
-            # Unclear why this doesn't also eat a timestamp, but many of the functions that split temporally use, fortunately 
-            # the column 'timestamp' (i.e. DEFAULT_TIMESTAMP_COL='timestamp') so I think we're fine. 
-            # "col_timestamp" : "timestamp"
-        }
+    def forward(self, x):
+        """
+        Implement our forward pass 
+        """
+        h = self.encoder(x) 
+        r = self.decoder(h)
 
-    train_matrix = AffinityMatrix(df=train, **header)
-    val_matrix = AffinityMatrix(df=val, **header)
-    val_src_matrix = AffinityMatrix(df=val_src, **header)
-    val_tgt_matrix = AffinityMatrix(df=val_target, **header)
-    test_src_matrix = AffinityMatrix(df=test_src, **header)
-    test_tgt_matrix = AffinityMatrix(df=test_target, **header)
+        return r
 
-    # This generates a sparse array of user vectors, aka user-item matrix
-    # X[0] is the first user in the list, with entries for all items known when the matrix was constructed in that row
-    train, _, _ = train_matrix.gen_affinity_matrix()
-    val, _, _ = val_matrix.gen_affinity_matrix() 
-    val_src, _, _ = val_src_matrix.gen_affinity_matrix()
-    val_tgt, _, _ = val_tgt_matrix.gen_affinity_matrix()
-    test_src, _, _ = test_src_matrix.gen_affinity_matrix()
-    test_tgt, _, _ = test_src_matrix.gen_affinity_matrix()    
+class AutoencoderEstimator(): 
 
-    train = binarize(train, 3)
-    val = binarize(train, 3)
-    val_src = binarize(val_src, 3) 
-    val_tgt = binarize(val_tgt, 3)
-    test_src = binarize(test_src, 3)
-    test_tgt = binarize(test_tgt, 3)
+    def __init__(self, tensorboard_dir="./runs", l1 = 250, l2 = 50): 
+        """
+        Initialize an object 
+        """
+        self.module = None
+        self.tensorboard_dir = tensorboard_dir
+        self.l1 = l1
+        self.l2 = l2 
 
-    sparsity = np.count_nonzero(train)/(train.shape[0]*train.shape[1])*100
-    print(f"sparsity: {sparsity:.2f}%")
+    def train(self, dataset, val, val_chk, epochs=2, lr=0.0005, loss_interval=10):
+        """
+        Train the model with the provided user-item dataset, optionally furnishing a learning 
+        rate and interval to plot loss values
+        """
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        
+        train_loss = []
 
-    model = StandardVAE(
-        n_users = train.shape[0], 
-        original_dim = train.shape[1],
-        intermediate_dim=250, 
-        latent_dim=50, 
-        n_epochs=1, 
-        batch_size=1, 
-        k=10, 
-        verbose=1, 
-        seed=4, 
-        save_path="models/svae.hdf5", 
-        drop_encoder=0.5, 
-        drop_decoder=0.5, 
-        annealing=False, 
-        beta=1.0) 
+        u_map, i_map = dataset.get_mappings()
+        model = Autoencoder(dims=len(i_map), l1=self.l1, l2=self.l2)  
+        loader = dataset.get_data_loader()
+            
+        # Track progress with tensorboard-style output
+        tqdm.write(f"Logging tensorboard output to {self.tensorboard_dir}")
+        writer = SummaryWriter(os.path.join(self.tensorboard_dir, 'exp_ae_recommender'))
 
-    model.fit(
-        x_train=train, 
-        x_valid=val, 
-        x_val_tr=val_src, 
-        x_val_te=val_tgt, 
-        mapper=val_matrix,
-        )
-    
-    tqdm.write("Training complete!") 
+        # Rehome, if necessary 
+        model = model.to(device)
+        
+        # We'll use MSE since we're interested in correctly reproducing ground-truth reviews
+        # the value of the autoencoder will be in the values it infers where no rating was 
+        # provided (which will form our recommendations)
+        loss_fn = nn.MSELoss()
 
-    return model
+        optimizer = optim.Adam(model.parameters(), lr=lr)
+        
+        tqdm.write(f"Starting training run...")
+        for epoch in tqdm(range(epochs), total=epochs):
+        
+            running_loss = 0.0
+            for i, reviews in tqdm(enumerate(loader), total=len(dataset)/dataset.batch_size):
 
-def predict(loader, model): 
-    """
-    Run a dataset through the (hopefully trained) model and return outputs
-    """
+                # Build a mask to apply later 
+                mask = (reviews > 0)
+                
+                # Push our key matrices to whatever device we've got                 
+                mask = mask.to(device)
+                reviews = reviews.to(device)
+                
+                # Toss any gradient residue from prior runs
+                optimizer.zero_grad()
 
-    preds = []
-    probas = []
+                # Run the reviews through the network and then propagate the gradient
+                # backward to improve our alignment with ground-truth review. 
+                # Note we mask out any non-reviews to avoid the network learning 
+                # to reconstruct, as our prediction is based entirely on the network's 
+                # ability to estimate these so we want them to evolve with the other
+                # weights (and we wouldn't know which way to push them anyway)
+                outputs = model(reviews)
+                loss = loss_fn(outputs[mask], reviews[mask])
+                loss.backward()
 
-    #TODO: implement
+                optimizer.step()
 
-def test(model, dataset):
-    """
-    Test model !
-    """
+                # Accumulate metrics for hyperparameter tuning
+                running_loss += loss.item()
 
-    dataset = pd.read_parquet(dataset)    
+                writer.add_scalar(f"training loss", loss, epoch*len(loader)/loader.batch_size)
 
-    #TODO: implement
-    
+                if (i % loss_interval) == (loss_interval - 1): 
+                    interval_loss = running_loss / loss_interval                    
+                    tqdm.write(f"[{epoch + 1}, {i + 1:5d}] loss: {interval_loss:.5f}")
+                    running_loss = 0 
+        
+        # Update our object state
+        self.model = model 
+        self.u_map = u_map
+        self.i_map = i_map 
+
+        hps = { 
+            'train_reviews' : len(dataset),
+            'train_items' : len(i_map),
+            'train_users' : len(u_map), 
+            'epochs':epochs, 
+            'lr': lr, 
+            'batch_size': loader.batch_size,
+            'autoencoder_io_dims': model.dims, 
+            'autoencoder_hidden_1': model.l1,
+            'autoencoder_hidden_2': model.l2,
+        }        
+        writer.add_hparams(hps, {}) 
+        writer.close()
+        tqdm.write("Training complete!") 
+
+        return model, train_loss 
+
+    def recommend(self, dataset, k) -> np.ndarray: 
+        """
+        Generate top k predictions given a list of item ratings (one per user)
+        """
+        recommendations = []
+
+        u_map, _ = dataset.get_mappings()
+
+        # Avoid gradient bookkeeping
+        with torch.no_grad(): 
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+            model = self.model.to(device) 
+            
+            # Avoid training interventions like batch norm and dropout
+            model.eval() 
+
+            # Generate recommendations
+            for u, reviews in tqdm(enumerate(dataset.get_data_loader()), total=len(dataset)):
+                
+                # Note the ratings for this user
+                rated = np.nonzero(reviews) 
+
+                reviews = reviews.to(device)
+                logits = model(reviews) 
+
+                # Find the top_k novel recommendations 
+                output = logits.to("cpu").flatten()
+                recommended = []
+                while len(output) < k: 
+                    best_rated = similarity.argmax(output, exclude=rated + recommended) 
+                    recommended.append(best_rated)
+                                        
+                    # Record provided user, recommended item and inferred rating
+                    row = [
+                        similarity.find_key(u_map, u), 
+                        similarity.find_key(self.i_map, best_rated),
+                        output[best_rated]
+                        ]
+                    recommendations.append(row)
+
+        df = pd.DataFrame(recommendations, columns=['user_id', 'item_id', 'rating']) 
+        return df
+
+    def score(self, top_ks, test, test_chk, k=10):
+        """
+        Employ the recommenders library to calculate MAP@K here. 
+        NOTE: Recommenders examples used to source call semantics, see e.g.
+        https://github.com/recommenders-team/recommenders/blob/main/examples/02_model_collaborative_filtering/standard_vae_deep_dive.ipynb
+        """        
+
+        tqdm.write(f"Scoring recommendations... ")
+
+        recs_df = test.map_back_sparse(top_ks, kind='prediction')
+        test_df = test.map_back_sparse(test_chk, kind='ratings')
+
+        map = map_at_k(test_df, recs_df, col_prediction='prediction', k=k)
+        
+        tqdm.write(f"MAP@K (k={k}): {map}")
+
+        return map
+
 def save_model(model, path):
     """
     Save the model to a file
-    NOTE: borrowed from vision project
     """
-    filename = os.path.join(path, "ae.pt")
-    
-    #TODO: implement
-
-    tqdm.write(f"Model saved to {filename}")
+    filename = os.path.join(path, "autoencoder.pt")
+    torch.save(model, filename)
+    print(f"Model saved to {filename}")
 
     return filename
 
 def load_model(path): 
     """
-    Load our model 
-
-    NOTE: borrowed from vision project
+    Pull a saved model off disk 
     """
-    model = None
-
-    #TODO: implement
+    model = torch.load(os.path.join(path, "autoencoder.pt"), weights_only=False)
+    
+    if type(model) != Autoencoder: 
+        raise ValueError(f"Found unexpected type {type(model)} in {path}!")
 
     return model
 
-def summarize_history(history): 
+def train(train, epochs, val, val_chk):
     """
-    Mine some salient history 
+    Train the autoencoder given the provided dataset     
     """
-    #TODO: update or discard 
-    
-    df = pd.DataFrame(history) 
-    s = (f"***************************\n")
-    s += f"Completed {df.epoch.max():.4} epochs ({df.step.max()} steps)\n"
-    s += f" - Loss {df.loss.max():.3f} -> {df.loss.min():.3f}\n"
-    s += f" - Eval runtime: {df.eval_runtime.sum():.2f}s ({df.eval_runtime.mean():.2f}s/eval)\n"
-    return s   
+    model = AutoencoderEstimator()
+    model.train(dataset=train, val=val, val_chk=val_chk, epochs=epochs)
+    return model 
+
+def test(model, test, test_chk, top_k):
+    """
+    Test the autoencoder model 
+    """
+    top_ks = model.recommend(test, top_k)
+    scores = model.score(top_ks, test_chk)
+    tqdm.write(f"Autoencoder mean scores for the provided dataset: {np.mean(scores)}")
+
