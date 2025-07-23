@@ -25,16 +25,17 @@ class Autoencoder(nn.Module):
         super().__init__()
 
         self.encoder = nn.Sequential(
-            nn.Linear(dims, 500),
+            nn.Linear(dims, 200),
             nn.ReLU(), 
-            nn.Linear(500, 75),
+            nn.Linear(200, 70),
             nn.ReLU(), 
         )
         self.decoder = nn.Sequential(
-            nn.Linear(75, 500),
+            nn.Linear(70, 200),
             nn.ReLU(), 
-            nn.Linear(500, dims),
+            nn.Linear(200, dims),
             nn.ReLU(), 
+            nn.Sigmoid()
         )
 
     def forward(self, x):
@@ -87,7 +88,14 @@ class AutoencoderEstimator():
             running_loss = 0.0
             for i, reviews in tqdm(enumerate(loader), total=len(dataset)):
 
-                # Push our review matrix to whatever device is available
+                # Build a mask to apply later and move it 
+                mask = torch.zeros(reviews.shape)                
+                for dim in range(mask.shape[0]): 
+                    ix = np.nonzero(reviews[dim])[0]
+                    mask[dim][ix] = 1                
+
+                # Push our key matrices to whatever device we've got 
+                mask = mask.to(device)
                 reviews = reviews.to(device)
                 
                 # Toss any gradient residue from prior runs
@@ -97,13 +105,12 @@ class AutoencoderEstimator():
                 # backward to improve our alignment with ground-truth review. 
                 # Note we mask out any non-reviews to avoid the network learning 
                 # to reconstruct, as our prediction is based entirely on the network's 
-                # ability to estimate these 
+                # ability to estimate these so we want them to evolve with the other
+                # weights (and we wouldn't know which way to push them anyway)
                 outputs = model(reviews)
+                outputs = outputs * mask                 
                 loss = loss_fn(outputs, reviews)
                 loss.backward()
-
-                #TODO: inspect loss values here and mask before computing gradients at each layer
-                #https://stackoverflow.com/questions/78958840/how-to-create-a-gradient-mask-in-pytorch
 
                 optimizer.step()
 
