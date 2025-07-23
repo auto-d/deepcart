@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 from dataset import DeepCartDataset, DeepCartTorchDataset
 import autoencoder
+import similarity
 
 from sklearn.metrics import classification_report, accuracy_score, top_k_accuracy_score, confusion_matrix, ConfusionMatrixDisplay
 
@@ -12,9 +13,9 @@ user_data = None
 model = None
 
 # Our poor-man's shopping interface, a set of gallery images and item selections
-gallery_images = []
 products = []
 top_k = 5
+selected = 0
 
 def initialize():         
     """
@@ -66,13 +67,6 @@ def get_item_details(item_id):
             "url": url 
         }
 
-def add_image(new_image):
-    """
-    Add a new image
-    """
-    gallery_images.append(new_image)
-    return gr.Gallery.update(value=gallery_images)
-
 def change_mode(mode): 
     """
     Toggle mode
@@ -86,12 +80,6 @@ def build_dataset_samples():
     """
     return [item["url"] for item in products]
 
-def update_dataset(): 
-    """
-    Revise our dataset gradio object (the apparently correct way to update a Dataset object)
-    """
-    return gr.Dataset(samples=build_dataset_samples())
-
 def generate(topk=5):
     """
     Generate new recommendations when the top_k changes
@@ -104,19 +92,19 @@ def generate(topk=5):
         top_ks = model.recommend(user_data, k=topk)
         print(top_ks)
 
-    return update_dataset()
-
+    return build_dataset_samples()
 
 def on_click(evt: gr.SelectData):
     """
     Callback to toggle item in cart and display current selection
     """
     global products 
+    global selected 
 
     stars = ["⭐", "⭐⭐", "⭐⭐⭐", "⭐⭐⭐⭐", "⭐⭐⭐⭐⭐"]
 
-    index = evt.index
-    product = products[index]   
+    selected = evt.index
+    product = products[selected]   
     
     rating = int(product['rating']) 
     rating = max(1, rating)
@@ -128,7 +116,7 @@ def on_click(evt: gr.SelectData):
         f"**Average Rating**: {star_rating}\n\n"\
         f"**Product ID**:{product['id']}"
 
-    return product_text, product['url']
+    return product_text
 
 def submit_rating(r):
     """
@@ -138,19 +126,20 @@ def submit_rating(r):
     global ref_data
     global model 
     global products 
+    global selected 
 
-    # TODO: get the associated item and update it's rating
+    # Bootstrap our predictions with the model's best guesses    
+    selected_item = products[selected]['id']
+    item_index = user_data.i_map.get(selected_item)
+    user_data.ui[0][item_index] = r/5
 
+    recs = model.recommend(user_data, k=20)
+    products = []
+    for index, item in recs.iterrows(): 
+        details = get_item_details(item.item_id)
+        products.append(details) 
 
-    # TODO: report the new recs
-    # recs = model.recommend(k=20)
-    # products = []
-    # for index, item in recs.iterrows(): 
-    #     details = get_item_details(item.item_id)
-    #     products.append(details) 
-
-    #return update_dataset()
-    return f"You rated: {r} stars"
+    return build_dataset_samples()
 
 def main(): 
     """
@@ -170,34 +159,24 @@ def main():
         gr.Markdown(value="##  Probing the depths of the Amazon electronics storefront")
         gr.Markdown(value="You've seen the best products Amazon has to offer, but have you seen the worst? Interact with our collection of the worst products the storefront has to offer and see more terrible products based on your preferences!")
 
+        topk_slider = gr.Slider(label="Recommendations to generate", value=5, maximum=50, step=5)
+
         # Use of gr.Radio with emojis courtesy of gpt-4o, see
         # https://chatgpt.com/share/68813240-1cf4-8013-b0d5-393e661c9508
 
         initialize()         
 
-        rating = gr.Radio(choices=["⭐", "⭐⭐", "⭐⭐⭐", "⭐⭐⭐⭐", "⭐⭐⭐⭐⭐"], label="Rating")
-        output = gr.Textbox()
-        rating.change(fn=submit_rating, inputs=rating, outputs=output)
-
-        product_image = gr.Image(type="filepath", label="Product Detail", interactive=False)
-
-        # ds = gr.Dataset(       
-        #     components=[gr.Image(type="filepath", label="Product", interactive=False)], 
-        #     samples=build_dataset_samples(), 
-        #     layout="gallery",
-        #     label="Recommendations")
-        
-        # ds.select(fn=on_click, outputs=[product_info, product_image])
-        
-        product_info = gr.Markdown(label="Product Info")
         gallery = gr.Gallery(label="Products", columns=3, height="auto", 
                              value = build_dataset_samples())         
-        gallery.select(fn=on_click, outputs=[product_info, product_image])
+        product_info = gr.Markdown(label="Product Info")
 
-        # # Settings 
-        # with gr.Row():                 
-        #     topk_slider = gr.Slider(label="Recommendations to generate", value=5, maximum=50, step=5)
-        #     topk_slider.change(fn=generate, inputs=topk_slider, outputs=ds)
+        gallery.select(fn=on_click, outputs=product_info)
+        topk_slider.change(fn=generate, inputs=topk_slider, outputs=gallery)
+
+        with gr.Column(): 
+            rating = gr.Radio(choices=["⭐", "⭐⭐", "⭐⭐⭐", "⭐⭐⭐⭐", "⭐⭐⭐⭐⭐"], label="Rate this product!")
+            output = gr.Textbox("Output")
+            rating.change(fn=submit_rating, inputs=rating, outputs=output)
 
     demo.launch(share=False)
 
