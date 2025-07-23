@@ -128,7 +128,7 @@ def build_parser():
     train_parser.add_argument("--data-tag", type=str, help="Dataset tag to look for (set during creation)", required=True)
     train_parser.add_argument("--model-dir", help="Directory to write resulting model to", default="models")
     train_parser.add_argument("--nn_epochs", type=int, default=1)
-    train_parser.add_argument("--nn_batch", type=int, default=10)
+    train_parser.add_argument("--nn_batch", type=int, default=1)
     train_parser.add_argument("--type", choices=['naive', 'classic', 'neural'], default='neural')
 
     # Test mode 

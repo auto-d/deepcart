@@ -37,7 +37,6 @@ class Autoencoder(nn.Module):
             nn.ReLU(), 
         )
 
-
     def forward(self, x):
         """
         Implement our forward pass 
@@ -66,11 +65,10 @@ class AutoencoderEstimator():
         train_loss = []
 
         u_map, i_map = dataset.get_mappings()
-        model = Autoencoder(len(dataset), self.u_map, self.i_map)  
+        model = Autoencoder(len(i_map))  
             
         # Track progress with tensorboard-style output
         writer = SummaryWriter(self.tensorboard_dir)
-        writer.add_graph(model)
 
         # Rehome, if necessary 
         model = model.to(device)
@@ -82,11 +80,12 @@ class AutoencoderEstimator():
 
         optimizer = optim.Adam(model.parameters(), lr=lr)
 
+        loader = dataset.get_data_loader()
         tqdm.write(f"Starting training run...")
         for epoch in tqdm(range(epochs), total=epochs):
         
             running_loss = 0.0
-            for i, reviews in tqdm(enumerate(dataset.get_data_loader()), total=len(dataset)):
+            for i, reviews in tqdm(enumerate(loader), total=len(dataset)):
 
                 # Push our review matrix to whatever device is available
                 reviews = reviews.to(device)
@@ -105,8 +104,6 @@ class AutoencoderEstimator():
 
                 #TODO: inspect loss values here and mask before computing gradients at each layer
                 #https://stackoverflow.com/questions/78958840/how-to-create-a-gradient-mask-in-pytorch
-                
-                model.grad = model.grad
 
                 optimizer.step()
 
@@ -115,7 +112,7 @@ class AutoencoderEstimator():
 
                 if (i % loss_interval) == (loss_interval - 1): 
                     interval_loss = running_loss / loss_interval
-                    writer.add_scalar('training loss', interval_loss)
+                    writer.add_scalar('training loss', interval_loss, epoch*len(loader))
                     tqdm.write(f"[{epoch + 1}, {i + 1:5d}] loss: {interval_loss:.3f}")
                     running_loss = 0 
         

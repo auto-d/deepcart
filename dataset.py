@@ -208,7 +208,7 @@ class DeepCartTorchDataset(torch.utils.data.Dataset):
         self.ui, self.u_map, self.i_map = matrix.gen_affinity_matrix()
         
         # Scale reviews to [0,1] for our network 
-        self.ui_float = np.divide(self.ui/5)
+        self.ui = np.divide(self.ui, 5).astype(np.float32)
 
     def __len__(self): 
         """
@@ -220,7 +220,8 @@ class DeepCartTorchDataset(torch.utils.data.Dataset):
         """
         Retrieve an item at the provided index
         """
-        return self.ui[idx]
+        item = self.ui[idx]
+        return item 
 
     def get_mappings(self): 
         """
