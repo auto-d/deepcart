@@ -82,9 +82,9 @@ def argmin(list_, exclude):
     """
     Argmin with a list of indices to include, and exclude
     """    
-    min_i = 1 
+    min_i = 0 
     for i, a in enumerate(list_): 
         if i not in exclude: 
-            if a < list_[min_i]: 
+            if a <= list_[min_i]: 
                 min_i = i 
     return min_i 
