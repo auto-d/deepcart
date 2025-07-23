@@ -25,15 +25,15 @@ class Autoencoder(nn.Module):
         super().__init__()
 
         self.encoder = nn.Sequential(
-            nn.Linear(dims, 200),
+            nn.Linear(dims, 100),
             nn.ReLU(), 
-            nn.Linear(200, 70),
+            nn.Linear(100, 20),
             nn.ReLU(), 
         )
         self.decoder = nn.Sequential(
-            nn.Linear(70, 200),
+            nn.Linear(20, 100),
             nn.ReLU(), 
-            nn.Linear(200, dims),
+            nn.Linear(100, dims),
             nn.ReLU(), 
             nn.Sigmoid()
         )
@@ -56,7 +56,7 @@ class AutoencoderEstimator():
         self.module = None
         self.tensorboard_dir = tensorboard_dir
 
-    def train(self, dataset, val, val_chk, epochs=2, lr=0.005, loss_interval=10):
+    def train(self, dataset, val, val_chk, epochs=2, lr=0.0005, loss_interval=2):
         """
         Train the model with the provided user-item dataset, optionally furnishing a learning 
         rate and interval to plot loss values
@@ -91,8 +91,8 @@ class AutoencoderEstimator():
                 # Build a mask to apply later and move it 
                 mask = torch.zeros(reviews.shape)                
                 for dim in range(mask.shape[0]): 
-                    ix = np.nonzero(reviews[dim])[0]
-                    mask[dim][ix] = 1                
+                    ix = np.nonzero(reviews[dim])
+                    mask[dim][ix] = 1
 
                 # Push our key matrices to whatever device we've got 
                 mask = mask.to(device)
@@ -108,7 +108,7 @@ class AutoencoderEstimator():
                 # ability to estimate these so we want them to evolve with the other
                 # weights (and we wouldn't know which way to push them anyway)
                 outputs = model(reviews)
-                outputs = outputs * mask                 
+                outputs = outputs * mask
                 loss = loss_fn(outputs, reviews)
                 loss.backward()
 
@@ -138,15 +138,12 @@ class AutoencoderEstimator():
         """
         recommendations = []
 
-        preds = []
-        probas = []
-
         u_map, _ = dataset.get_mappings()
 
         # Avoid gradient bookkeeping
         with torch.no_grad(): 
             device = "cuda" if torch.cuda.is_available() else "cpu"
-            model = model.to(device) 
+            model = self.model.to(device) 
             
             # Avoid training interventions like batch norm and dropout
             model.eval() 
