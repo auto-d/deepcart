@@ -163,7 +163,7 @@ class AutoencoderEstimator():
         ds = DeepCartTorchDataset(ui=np.array([self.schema]), u_map=self.u_map, i_map=self.i_map, batch_size=1)
         return ds
 
-    def recommend(self, dataset, k, reverse=False) -> np.ndarray: 
+    def recommend(self, dataset, k, reverse=False, allow_ixs=None) -> np.ndarray: 
         """
         Generate top k predictions given a list of item ratings (one per user)
         """
@@ -195,9 +195,15 @@ class AutoencoderEstimator():
                 while len(recommended) < k: 
                     best = None
                     if reverse: 
-                        best = similarity.argmin(output, exclude=rated + recommended) 
+                        best = similarity.argmin(
+                            output, 
+                            exclude=rated + recommended,
+                            include=allow_ixs) 
                     else:
-                        best = similarity.argmax(output, exclude=rated + recommended) 
+                        best = similarity.argmax(
+                            output, 
+                            exclude=rated + recommended, 
+                            include=allow_ixs) 
 
                     recommended.append(best)
                                         
@@ -221,10 +227,13 @@ class AutoencoderEstimator():
 
         tqdm.write(f"Scoring recommendations... ")
 
-        recs_df = test.map_back_sparse(top_ks, kind='prediction')
-        test_df = test.map_back_sparse(test_chk, kind='ratings')
-
-        map = map_at_k(test_df, recs_df, col_prediction='prediction', k=k)
+        map = map_at_k(
+            test_chk.df, 
+            top_ks, 
+            col_item="item_id", 
+            col_user="user_id", 
+            col_prediction='prediction', 
+            k=k)
         
         tqdm.write(f"MAP@K (k={k}): {map}")
 
@@ -263,7 +272,9 @@ def test(model, test, test_chk, top_k):
     """
     Test the autoencoder model 
     """
-    top_ks = model.recommend(test, top_k)
-    scores = model.score(top_ks, test_chk)
-    tqdm.write(f"Autoencoder mean scores for the provided dataset: {np.mean(scores)}")
+    allow_items = list(test_chk.df.item_id.unique())
+    allow_ixs = [model.i_map.get(k) for k in allow_items]    
+    test_k = len(allow_items)
 
+    top_ks = model.recommend(test, test_k, allow_ixs=allow_ixs)
+    model.score(top_ks, test_chk, test_k)

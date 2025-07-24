@@ -67,24 +67,28 @@ def map_keys(dict_a, a_vals, dict_b):
     
     return b_vals
 
-def argmax(list_, exclude): 
+def argmax(list_, exclude, include): 
     """
     Argmax with a list of indices to include, and exclude
     """    
     max_i = 0 
     for i, a in enumerate(list_): 
         if i not in exclude: 
+            if include and i not in include: 
+                break 
             if a >= list_[max_i]: 
                 max_i = i 
     return max_i 
 
-def argmin(list_, exclude): 
+def argmin(list_, exclude, include): 
     """
     Argmin with a list of indices to include, and exclude
     """    
     min_i = 0 
     for i, a in enumerate(list_): 
         if i not in exclude: 
+            if include and i not in include: 
+                break 
             if a <= list_[min_i]: 
                 min_i = i 
     return min_i 

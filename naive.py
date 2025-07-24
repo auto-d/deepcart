@@ -44,9 +44,9 @@ class NaiveEstimator(BaseEstimator):
          
         return self
         
-    def recommend(self, ui, k) -> np.ndarray: 
+    def recommend(self, ui, k, allow_ixs=None) -> np.ndarray: 
         """
-        Generate top k predictions given a list of item ratings (one per user)
+        Generate top k predictions given a list of item ratings (one per user)        
         """
         recommendations = []
                 
@@ -69,7 +69,10 @@ class NaiveEstimator(BaseEstimator):
             recommended = []
             
             while len(recommended) < k: 
-                best_rated = similarity.argmax(self.item_ratings, exclude=rated + recommended)
+                best_rated = similarity.argmax(
+                    self.item_ratings, 
+                    exclude=rated + recommended,
+                    include=allow_ixs)
                 recommended.append(best_rated) 
                 
                 # Recommendations need to be in a format suitable for scoring w/ the 
@@ -144,6 +147,12 @@ def test(model, test, test_chk, top_k):
     """
     Test the naive model 
     """
-    top_ks = model.recommend(test, top_k)
-    scores = model.score(top_ks, test_chk)
-    tqdm.write(f"Naive mean scores for the provided dataset: {np.mean(scores)}")
+    
+    # We need to constrain comparison here... the matrix is too sparse to expect 
+    # any reasonable rankings otherwise.
+    allow_items = list(test_chk.df.item_id.unique())
+    allow_ixs = [model.model_i_map.get(k) for k in allow_items]
+    
+    test_k = len(test_chk.df)
+    top_ks = model.recommend(test, test_k, allow_ixs=allow_ixs)
+    model.score(top_ks, test_chk, test_k)

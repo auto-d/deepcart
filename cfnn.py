@@ -88,7 +88,7 @@ class CfnnEstimator(BaseEstimator):
         self.similarity_matrix = similarity_matrix
         return self
 
-    def recommend(self, ui, k) -> np.ndarray: 
+    def recommend(self, ui, k, allow_ixs=None) -> np.ndarray: 
         """
         Generate top k predictions given a list of item ratings (one per user)
         """
@@ -138,7 +138,10 @@ class CfnnEstimator(BaseEstimator):
             for proxy in proxies: 
 
                 while True: 
-                    best_rated = similarity.argmax(self.model_ui[proxy], exclude=rated + recommended) 
+                    best_rated = similarity.argmax(
+                        self.model_ui[proxy], 
+                        exclude=rated + recommended, 
+                        include=allow_ixs) 
                     
                     # If we're out of 'good' items, move to the next user
                     if self.model_ui[proxy][best_rated] <= 3: 
@@ -157,7 +160,7 @@ class CfnnEstimator(BaseEstimator):
                     if len(recommended) >= k: 
                         break
         
-        df = pd.DataFrame(recommendations, columns=['user_id', 'item_id', 'rating']) 
+        df = pd.DataFrame(recommendations, columns=['user_id', 'item_id', 'prediction']) 
         return df 
     
     def score(self, top_ks, test_chk, k):
@@ -222,6 +225,9 @@ def test(model, test, test_chk, top_k):
     """
     Test the CFNN model 
     """
-    top_ks = model.recommend(test, top_k)
-    scores = model.score(top_ks, test_chk, top_k)
-    tqdm.write(f"CF NN mean scores for the provided dataset: {np.mean(scores)}")
+    allow_items = list(test_chk.df.item_id.unique())
+    allow_ixs = [model.model_i_map.get(k) for k in allow_items]    
+    test_k = len(allow_items)
+
+    top_ks = model.recommend(test, test_k, allow_ixs)
+    model.score(top_ks, test_chk, test_k)
