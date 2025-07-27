@@ -80,6 +80,14 @@ def argmax(list_, exclude, include):
                 max_i = i 
     return max_i 
 
+def argmax2(list_, exclude, include): 
+    max_i = 0
+    for i in include: 
+        if i not in exclude: 
+            if list_[i] >= list_[max_i]: 
+                max_i = i 
+    return max_i 
+
 def argmin(list_, exclude, include): 
     """
     Argmin with a list of indices to include, and exclude

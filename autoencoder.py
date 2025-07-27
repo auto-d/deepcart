@@ -184,7 +184,7 @@ class AutoencoderEstimator():
             model.eval() 
             
             # Generate recommendations
-            for u, reviews in tqdm(enumerate(dataset.get_data_loader()), total=len(dataset)):
+            for u, reviews in tqdm(enumerate(dataset.get_data_loader()), total=len(dataset)/dataset.batch_size):
 
                 # Note the ratings for this user
                 rated = np.nonzero(reviews[0]) 
@@ -213,7 +213,7 @@ class AutoencoderEstimator():
                             exclude=rated + recommended,
                             include=allow_ixs) 
                     else:
-                        best = similarity.argmax(
+                        best = similarity.argmax2(
                             output, 
                             exclude=rated + recommended, 
                             include=allow_ixs) 
@@ -228,10 +228,10 @@ class AutoencoderEstimator():
                         ]
                     recommendations.append(row)
 
-        df = pd.DataFrame(recommendations, columns=['user_id', 'item_id', 'rating']) 
+        df = pd.DataFrame(recommendations, columns=['user_id', 'item_id', 'prediction']) 
         return df
 
-    def score(self, top_ks, test, test_chk, k=10):
+    def score(self, top_ks, test_chk, k=10):
         """
         Employ the recommenders library to calculate MAP@K here. 
         NOTE: Recommenders examples used to source call semantics, see e.g.
