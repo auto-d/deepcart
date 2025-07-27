@@ -23,18 +23,33 @@ class CfnnEstimator(BaseEstimator):
         self.model_i_map = None
         self.similarity_matrix = None
 
-    def compare_users(self, ui_a, a_ix, ui_b, b_ix, metric):
+    def compare_users(self, ui_a, a_ix, ui_b, b_ix, metric, a_imap=None, b_imap=None):
         """
-        Report a similarity score given the user-item matrices and associated indices for two users
+        Report a similarity score given the user-item matrices and associated indices for two users.
+        Provide item mappings for each if the item indices represent different itemsets. 
         """
         # Given the sparsity of our review vectors, cosine similarity is going to be 
         # effectively zero if we look across the entire item space... compare only those 
         # items these two users have in common (at least 1 rating between the two).
         a_item_ix = np.nonzero(ui_a[a_ix])[0]            
         b_item_ix = np.nonzero(ui_b[b_ix])[0]
-        all_ix = np.concatenate([a_item_ix, b_item_ix])
-        a_items = ui_a[a_ix][all_ix]            
-        b_items = ui_b[b_ix][all_ix]
+        
+        a_items = []
+        b_items = []
+
+        # Build a list of ratings of common items, mapping between the two different references 
+        # if needed 
+        if a_imap and b_imap: 
+            a_keys = set(similarity.find_keys(a_imap, a_item_ix))
+            b_keys = set(similarity.find_keys(b_imap, b_item_ix))
+            all_keys = a_keys.union(b_keys)
+            for k in all_keys: 
+                a_items.append(ui_a[a_ix][a_imap.get(k)] if a_imap.get(k) else 0)
+                b_items.append(ui_b[b_ix][b_imap.get(k)] if b_imap.get(k) else 0)
+        else:         
+            all_ix = np.concatenate([a_item_ix, b_item_ix])
+            a_items = ui_a[a_ix][all_ix]            
+            b_items = ui_b[b_ix][all_ix]
 
         # Fill non-ratings with middling scores. Non-interactions appear 
         # dissimilar to positive reviews and similar to negative ones otherwise.
@@ -98,34 +113,40 @@ class CfnnEstimator(BaseEstimator):
         ui, u_map, i_map = ui.gen_affinity_matrix() 
 
         # For each provided user, find the most similar user
-        for u in tqdm(range(len(u_map))): 
+        for user, user_ix in tqdm(u_map.items()): 
                         
             rated = []
             proxies = []
-
-            target_id = similarity.find_key(self.model_u_map, u)
+            
+            target_ix = self.model_u_map.get(user)
             
             # We need to cache items this user has already interacted with and find a proxy 
             # for their reviews (to make recommendations). If this user hasn't been seen 
             # previously we'll have to dig around in training data for a similar user.
-            if not target_id:
-                tqdm.write(f"Unknown user {similarity.find_key(u_map,u)} encountered!")
+            if target_ix is None:
+                tqdm.write(f"Unknown user {user} encountered! Identifying proxy in training data...")
                 
                 # Do a live similarity comparison to find a proxy user in the training data
-                best_match = 0
-                for user_id, user_ix in self.model_u_map.items(): 
-                    sim = self.compare_users(ui, u, self.model_ui, user_ix) 
-                    if sim > best_match: 
-                        target_id = user_id
-                        target_ix = user_ix                        
+                max_sim = 0
+                for _, model_user_ix in self.model_u_map.items(): 
+                    sim = self.compare_users(
+                        ui, 
+                        u_map.get(user), 
+                        self.model_ui, 
+                        model_user_ix, 
+                        metric='pearson', 
+                        a_imap = i_map, 
+                        b_imap = self.model_i_map) 
+                    if sim > max_sim: 
+                        target_ix = model_user_ix
+                        max_sim = sim 
                                 
                 # Our only evidence of this user's reviews are what came along in the dataset
                 # here. Map these ratings to the associated items in our training data. 
-                new_rated = list(np.nonzero(ui[u])[0]) 
+                new_rated = list(np.nonzero(ui[user_ix])[0]) 
                 rated = similarity.map_keys(i_map, new_rated, self.model_i_map)
             
             else:
-                target_ix = self.model_u_map.get(target_id)
                 rated = list(np.nonzero(self.model_ui[target_ix])[0])
                 
             # Retrieve the most similar users (for the current user or their stand-in) recorded 
@@ -149,7 +170,7 @@ class CfnnEstimator(BaseEstimator):
 
                     # This is worth recommending, stick it on the list
                     row = [
-                        similarity.find_key(u_map, u), 
+                        user, 
                         similarity.find_key(self.model_i_map, best_rated), 
                         self.model_ui[proxy][best_rated]
                         ]
@@ -180,8 +201,8 @@ class CfnnEstimator(BaseEstimator):
             col_prediction='prediction', 
             k=k)
         
-        tqdm.write(f"MAP@K (k={k}): {map}")
-
+        tqdm.write(f"MAP@K (k={k}): {map}") 
+        
         return map
 
 def save_model(model, path):
@@ -227,7 +248,7 @@ def test(model, test, test_chk, top_k):
     """
     allow_items = list(test_chk.df.item_id.unique())
     allow_ixs = [model.model_i_map.get(k) for k in allow_items]    
-    test_k = len(allow_items)
+    test_k = min(len(allow_items), top_k)
 
     top_ks = model.recommend(test, test_k, allow_ixs)
     model.score(top_ks, test_chk, test_k)

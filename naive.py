@@ -151,8 +151,8 @@ def test(model, test, test_chk, top_k):
     # We need to constrain comparison here... the matrix is too sparse to expect 
     # any reasonable rankings otherwise.
     allow_items = list(test_chk.df.item_id.unique())
-    allow_ixs = [model.model_i_map.get(k) for k in allow_items]
+    allow_ixs = [model.model_i_map.get(k) for k in allow_items]        
+    test_k = min(len(allow_items), top_k)
     
-    test_k = len(test_chk.df)
     top_ks = model.recommend(test, test_k, allow_ixs=allow_ixs)
     model.score(top_ks, test_chk, test_k)

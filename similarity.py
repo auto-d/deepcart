@@ -75,7 +75,7 @@ def argmax(list_, exclude, include):
     for i, a in enumerate(list_): 
         if i not in exclude: 
             if include and i not in include: 
-                break 
+                continue 
             if a >= list_[max_i]: 
                 max_i = i 
     return max_i 
@@ -88,7 +88,7 @@ def argmin(list_, exclude, include):
     for i, a in enumerate(list_): 
         if i not in exclude: 
             if include and i not in include: 
-                break 
+                continue
             if a <= list_[min_i]: 
                 min_i = i 
     return min_i 

@@ -146,14 +146,14 @@ def router():
             match (args.type): 
                 case 'naive':
                     model = naive.load_model(args.model_dir)
-                    naive.test(model, dataset.test, dataset.test_chk, top_k=args.top_k)
+                    naive.test(model, dataset.val, dataset.val_chk, top_k=args.top_k)
                 case 'classic':
                     model = cfnn.load_model(args.model_dir)
-                    cfnn.test(model, dataset.test, dataset.test_chk, top_k=args.top_k) 
+                    cfnn.test(model, dataset.val, dataset.val_chk, top_k=args.top_k) 
                 case 'neural': 
                     model = autoencoder.load_model(args.model_dir)
-                    torch_dataset = DeepCartTorchDataset(matrix=dataset.test)
-                    autoencoder.test(model, torch_dataset, dataset.test_chk, top_k=args.top_k)
+                    torch_dataset = DeepCartTorchDataset(matrix=dataset.val)
+                    autoencoder.test(model, torch_dataset, dataset.val_chk, top_k=args.top_k)
 
         case "deploy":
             deploy(args.share, args.data_tag)

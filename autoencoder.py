@@ -169,8 +169,12 @@ class AutoencoderEstimator():
         """
         recommendations = []
 
-        u_map, _ = dataset.get_mappings()
-
+        u_map, i_map = dataset.get_mappings()
+        
+        # The model baseline is is the itemset we were provided at training time, the if data we 
+        # are predicting on differs, we have to map these new items into the old item space 
+        mapping = True if i_map.keys() != self.i_map.keys() else False            
+            
         # Avoid gradient bookkeeping
         with torch.no_grad(): 
             device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -178,13 +182,22 @@ class AutoencoderEstimator():
             
             # Avoid training interventions like batch norm and dropout
             model.eval() 
-
+            
             # Generate recommendations
             for u, reviews in tqdm(enumerate(dataset.get_data_loader()), total=len(dataset)):
 
                 # Note the ratings for this user
                 rated = np.nonzero(reviews[0]) 
                 rated = rated[0].tolist() if len(rated) != 0 else []
+
+                # Map this user's reviews to our training item space if needed 
+                if mapping:                     
+                    mapped_reviews = torch.zeros((len(reviews), len(self.schema)))
+                    for i in range(len(reviews)): 
+                        new_ixs = np.nonzero(reviews[i]).flatten()
+                        model_ixs = similarity.map_keys(i_map, new_ixs, self.i_map)
+                        mapped_reviews[i][model_ixs] = reviews[i][new_ixs]
+                    reviews = mapped_reviews 
 
                 reviews = reviews.to(device)
                 logits = model(reviews) 
@@ -274,7 +287,7 @@ def test(model, test, test_chk, top_k):
     """
     allow_items = list(test_chk.df.item_id.unique())
     allow_ixs = [model.i_map.get(k) for k in allow_items]    
-    test_k = len(allow_items)
+    test_k = min(len(allow_items), top_k)
 
     top_ks = model.recommend(test, test_k, allow_ixs=allow_ixs)
     model.score(top_ks, test_chk, test_k)
